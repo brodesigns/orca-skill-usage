@@ -1,47 +1,79 @@
-# Skill Usage (Orca plugin)
+# Skill Usage for Orca: see which skills, MCP servers and agents you really use
 
-A sidebar panel that shows which skills, MCP servers, agents and plugins your coding agents really use, and which ones only cost context tokens. Use it to find what you can remove.
+An [Orca](https://github.com/stablyai/orca) plugin that shows which skills, MCP servers, agents and plugins of **Claude Code, Codex and Gemini** you actually use, and what the unused ones cost you in **context tokens**, per project.
 
-## What it shows
+![Skill Usage for Orca: see what your AI really loads and what it actually uses](assets/cover.png)
 
-- **Tiles:** tokens always loaded per session, potential savings, unused skills / MCP servers / agents, number of recorded calls.
-- **Period and project:** everything (tiles, lists, cleanup list) follows two pickers. Period: latest session, last 7, 30 or 90 days. Project: all projects, the current project (the most recently active one) or any recent project. "Latest session" is the newest session file of the chosen project (Orca does not tell the plugin which session has focus), so it needs a project: "all projects" is not offered with it. "Unused" always refers to the chosen period and project; project-level items of other projects are hidden. Project and session numbers are computed on demand from the session files and not stored.
-- **Tabs:** Skills, MCP, Agents, Plugins, Other. Each entry is a card with its source, estimated tokens, calls, last use and calls per agent. Skills show how often the model called them and how often you typed them as a slash command. Search, sorting (most used, token cost, name, last used), a global/project filter and an "unused only" switch help with long lists.
-- **Which AI:** every card shows the AIs an entry is installed for (Claude, Codex (ChatGPT), Gemini, or the shared `.agents` folder) and which AI actually used it, with counts. A filter shows one AI's entries only, so you can see what to keep, move or remove per AI.
-- **Cleanup list:** a Markdown list of everything installed but unused in the period, ready to copy.
-- **Other:** size of your global `CLAUDE.md`, the most used tools (Bash, Read, ...), reset, language (English or German).
+## Why
 
-## How it works
+Every installed skill, MCP server and agent adds its description to the context of **every** session. Most are used rarely, or in one project only, but they cost tokens every single time. Skill Usage reads your past sessions and shows you the facts, so you can decide what to keep.
 
-- **History:** on start the plugin reads your past sessions once (Claude Code: `~/.claude/projects/*/*.jsonl`, Codex: `~/.codex/sessions`), then only new lines. From each line it keeps tool names, slash command names, timestamps and call ids. **No prompt, answer or file text is stored or shown.** Counters are kept per day for 100 days.
-- **Live:** the `agent.tool.after` hook sees tool calls of agents in Orca terminals. Claude Code is counted from its session files (they also hold the commands you type), the hook counts other agents. Agents without a Skill tool (Codex) count as using a skill when they read its `SKILL.md`.
-- **Inventory:** it reads `~/.claude/skills`, `~/.codex/skills`, `~/.agents/skills`, `~/.claude/agents`, enabled plugins, the MCP server names in `~/.claude.json`, `~/.codex/config.toml` and `~/.gemini/settings.json`, your global `CLAUDE.md`, `AGENTS.md` and `GEMINI.md`, and for every project Claude Code knows: `.claude/skills`, `CLAUDE.md` and the server names in `.mcp.json`.
-- **Tokens** are an estimate (4 characters per token) of what sits in context: name and description of every skill the model may call itself. Skills with `disable-model-invocation: true` cost nothing. Project items load only inside their project, so they are not part of the totals.
+## What you get
 
-## Limits
+- **Token cost at a glance:** what is loaded in every session, and how much of it was never called.
+- **Where it exists, where it is used:** global or project, which projects call it, which AI uses it.
+- **Any project, any period:** latest session, 7, 30 or 90 days.
+- **Numbers from day one:** it reads your existing session files, no waiting for data to build up.
+- **Facts only:** it never changes a file and never tells you what to delete.
+- English and German.
 
-- MCP tool definitions cost context, but their size is unknown without starting the server, so MCP entries show usage only.
-- Slash commands are matched to skills by name; built-in commands such as `/model` are ignored.
-- History covers the last 90 days of session files that still exist on disk. Resumed sessions that copy old lines are de-duplicated for skills, MCP servers and agents, not for plain tools.
-- Disabled MCP servers are not detected. MCP servers whose names differ only in `-` vs `_` or case count as one.
-- "Unused" is only meaningful with enough data for the chosen period.
+## See it
 
-## Why "Full access"?
+**What is loaded, what is used.** Tokens per session and the entries nobody calls.
 
-Every plugin with a worker gets this label in Orca. This one:
+![Summary tiles with tokens per session, unused entries and calls](assets/screenshot-overview.png)
 
-- reads files in `~/.claude`, below `~/.claude/plugins` for enabled plugins, `~/.codex`, `~/.gemini`, `~/.agents`, `~/.claude.json` (only MCP server **names**, never env values, headers or tokens) and the few known files of your projects (`.claude/skills`, `CLAUDE.md`, `.mcp.json`); it reads regular files only and with size limits,
-- from session files it uses only tool names, command names, timestamps and ids,
-- reads the name, branch and folder of the focused workspace, only to switch "Current project" when you change workspace,
-- makes no network requests and sends nothing anywhere,
-- writes only its own counters to the plugin's storage (about 1 MB with a long history),
-- runs no programs and touches no terminals.
+**Where it exists, where it is used.** One card per skill, with its projects and AIs.
+
+![Skill cards with calls, AIs and projects](assets/screenshot-skills.png)
+
+**One project, one period.** Find what a single project really needs.
+
+![The panel filtered to one project and the last 7 days](assets/screenshot-project.png)
+
+**MCP servers per project.** See which project needs which server.
+
+![MCP server cards with the projects they were used in](assets/screenshot-mcp.png)
+
+**Find what costs but never runs.** Unused entries, sorted by token cost.
+
+![Unused entries sorted by token cost](assets/screenshot-unused.png)
 
 ## Install
 
-Orca, Settings, Plugins, add the marketplace, search "Skill Usage", review the access and approve.
+Requires Orca 1.4.248 or newer.
 
-## Develop
+1. In Orca, open **Settings → Plugins**.
+2. Add the marketplace `https://github.com/stablyai/orca-community-plugins.git` (ref `main`).
+3. Search for **Skill Usage**, install it and approve the access.
+
+From source: `git clone https://github.com/brodesigns/orca-skill-usage`, then `orca plugin dev load .` in the folder.
+
+## Privacy and access
+
+Orca labels every plugin with a worker "Full access". Here is what this one does with it:
+
+![Why Full access? Read-only, names not secrets, no network, no actions](assets/screenshot-access.png)
+
+- Reads your skill, agent and session files. It writes only its own counters to Orca's plugin storage.
+- From sessions it keeps only tool names, command names, timestamps, ids and project names. No prompts, no answers, no file contents. From MCP configs only server names, never env values or tokens.
+- No network requests. It types into no terminal and starts no agent.
+- It reads the workspace list only to find the folder of the focused workspace.
+
+## Good to know
+
+- Tokens are estimates (4 characters per token). The size of an MCP server's tool list is unknown, so MCP entries show usage only.
+- Claude Code is read completely. For Codex only skill reads count, for Gemini there is no usage data: such entries show "no usage data" instead of "unused".
+- "Unused" only means something with enough data for the chosen period.
+- Slash commands you type count as usage, built-in ones such as `/model` do not.
+
+<details>
+<summary>How it works, develop</summary>
+
+- **History:** past sessions are read once (Claude Code `~/.claude/projects` including subagents, Codex `~/.codex/sessions`), then only new lines. Counters are kept per day for 100 days.
+- **Inventory:** skills and agents in `~/.claude`, `~/.codex` and `~/.agents`, enabled plugins, MCP server names (`~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json`), `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, and the `.claude/skills`, `CLAUDE.md` and `.mcp.json` of each project.
+- **Live:** an `agent.tool.after` hook counts tool calls of other AIs; Claude Code is counted from its session files.
+- **Storage:** about 1 MB, stored in chunks because Orca limits a single value to 256 KiB.
 
 ```bash
 orca plugin types .
@@ -50,12 +82,12 @@ orca plugin test .
 orca plugin dev watch .
 ```
 
-Code layout (`src/`): `worker.ts` (hook, storage, import loop), `usage.ts` (classify, per-day counters), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory + usage), `panel.tsx` (UI), `i18n.ts` (English and German), `protocol.ts` (panel <-> worker contract).
+Code in `src/`: `worker.ts` (hook, storage, import), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory and usage), `usage.ts`, `store.ts`, `panel.tsx` (UI), `i18n.ts` (English and German), `protocol.ts`, `demo.ts` (made-up numbers for screenshots: set the storage key `demo` to `true`).
+
+</details>
 
 ## About
 
 Built and maintained by [BroDesigns](https://brodesigns.de), a web agency.
 
-## License
-
-MIT
+MIT license.

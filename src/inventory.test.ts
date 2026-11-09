@@ -1,8 +1,9 @@
+import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { assert, test } from 'orca/testing'
-import { parseFrontmatter, scanInventory } from './inventory'
+import { parseFrontmatter, scanInventory, scanProjectNames } from './inventory'
 
 async function home(): Promise<string> {
   return mkdtemp(join(tmpdir(), 'skill-usage-'))
@@ -120,6 +121,86 @@ test('reads a large ~/.claude.json completely (no cut-off at 256 KiB)', async ()
     await writeFile(join(h, '.claude.json'), JSON.stringify({ projects, mcpServers: { late: { command: 'x' } } }))
     const items = await scanInventory(h)
     assert.equal(items.some((i) => i.kind === 'mcp' && i.id === 'late'), true)
+  } finally {
+    await rm(h, { recursive: true, force: true })
+  }
+})
+
+test('a FIFO as SKILL.md or CLAUDE.md does not hang the scan', async () => {
+  const h = await home()
+  try {
+    await mkdir(join(h, '.claude', 'skills', 'pipe'), { recursive: true })
+    try {
+      execFileSync('mkfifo', [join(h, '.claude', 'skills', 'pipe', 'SKILL.md')])
+      execFileSync('mkfifo', [join(h, '.claude', 'CLAUDE.md')])
+    } catch {
+      return // no mkfifo on this system
+    }
+    const started = Date.now()
+    const items = await scanInventory(h)
+    assert.equal(Date.now() - started < 3000, true)
+    assert.equal(items.find((i) => i.id === 'pipe'), undefined)
+  } finally {
+    await rm(h, { recursive: true, force: true })
+  }
+})
+
+test('Codex TOML: real server names only, no sub-tables, fast on hostile input', async () => {
+  const h = await home()
+  try {
+    await mkdir(join(h, '.codex'), { recursive: true })
+    await writeFile(join(h, '.codex', 'config.toml'), '[mcp_servers.github]\ncommand = "x"\n[mcp_servers.github.env]\nT = "1"\n[mcp_servers.docs.tools.search]\napproval = "x"\n')
+    const items = await scanInventory(h)
+    assert.deepEqual(items.filter((i) => i.kind === 'mcp').map((i) => i.id).sort(), ['docs', 'github'])
+    await writeFile(join(h, '.codex', 'config.toml'), '[mcp_servers.x'.repeat(30_000))
+    const started = Date.now()
+    await scanInventory(h)
+    assert.equal(Date.now() - started < 2000, true)
+  } finally {
+    await rm(h, { recursive: true, force: true })
+  }
+})
+
+test('MCP servers of ~/.claude.json: global ones and one entry per project', async () => {
+  const h = await home()
+  try {
+    await writeFile(join(h, '.claude.json'), JSON.stringify({
+      mcpServers: { everywhere: {} },
+      projects: { '/w/shop': { mcpServers: { crm: { env: { K: 'SECRET' } } } }, '/w/blog': { mcpServers: { crm: {} } } }
+    }))
+    const items = await scanInventory(h)
+    const crm = items.find((i) => i.id === 'crm')
+    assert.equal(crm?.scope, 'project')
+    assert.equal(crm?.source, 'project:shop')
+    assert.deepEqual(crm?.also, ['project:blog'])
+    assert.equal(items.find((i) => i.id === 'everywhere')?.scope, 'global')
+    assert.equal(JSON.stringify(items).includes('SECRET'), false)
+  } finally {
+    await rm(h, { recursive: true, force: true })
+  }
+})
+
+test('project names are the name of the folder you work in', async () => {
+  const h = await home()
+  try {
+    await writeFile(join(h, '.claude.json'), JSON.stringify({ projects: { '/w/Kunden/shop-site': {}, '/w/OWN/broBreak': {}, relative: {} } }))
+    const names = await scanProjectNames(h)
+    assert.equal(names['-w-Kunden-shop-site'], 'shop-site')
+    assert.equal(names['-w-OWN-broBreak'], 'broBreak')
+    assert.equal(Object.keys(names).length, 2)
+  } finally {
+    await rm(h, { recursive: true, force: true })
+  }
+})
+
+test('an entry installed for several AIs lists every AI', async () => {
+  const h = await home()
+  try {
+    await skill(join(h, '.claude', 'skills'), 'twin', 'name: twin\ndescription: in both')
+    await skill(join(h, '.codex', 'skills'), 'twin', 'name: twin\ndescription: in both')
+    const items = await scanInventory(h)
+    const twin = items.find((i) => i.id === 'twin')
+    assert.deepEqual(twin?.agents, ['claude', 'codex'])
   } finally {
     await rm(h, { recursive: true, force: true })
   }

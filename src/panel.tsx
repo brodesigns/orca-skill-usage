@@ -1,4 +1,5 @@
-import { atom, Badge, Button, Callout, Card, Collapsible, CodeView, EmptyState, Grid, Heading, Input, plugin, Progress, read, RelativeTime, Row as Line, Select, set, Stack, Switch, Tab, Tabs, Text, type PanelContext } from 'orca'
+import { atom, Badge, Button, Callout, Card, Collapsible, EmptyState, Grid, Heading, Input, plugin, Progress, read, RelativeTime, Row as Line, Select, set, Stack, Switch, Tab, Tabs, Text, type PanelContext } from 'orca'
+import { totalCalls } from './totals'
 import { agentName, agentNames, dateLocale, note, source, t, type Key, type Lang } from './i18n'
 
 const snap = atom<Snapshot | null>(null)
@@ -9,13 +10,21 @@ const range = atom('range', 30, { persist: 'plugin' })
 const project = atom('project', 'all', { persist: 'plugin' })
 const sortBy = atom('sortBy', 'usage', { persist: 'plugin' })
 const scopeBy = atom('scopeBy', 'all', { persist: 'plugin' })
-const query = atom('query', '')
 const agentSel = atom('agentSel', 'all', { persist: 'plugin' })
+const query = atom('query', '')
+const failed = atom('failed', false)
+const showTiles = atom('showTiles', true, { persist: 'plugin' })
 
 const view = (): View => ({ range: read(range), scope: read(project) })
 
 function load(): void {
-  void plugin.request('usage.get', view()).then((s) => set(snap, s))
+  void plugin
+    .request('usage.get', view())
+    .then((s) => {
+      set(failed, false)
+      set(snap, s)
+    })
+    .catch(() => set(failed, true))
 }
 
 export function setup(ctx: PanelContext): void {
@@ -26,8 +35,8 @@ export function setup(ctx: PanelContext): void {
 const fmt = (n: number, l: Lang): string => n.toLocaleString(dateLocale(l))
 const calls = (r: Row): number => r.auto + r.direct
 
-/** Unused = installed but never called in the period. */
-const isUnused = (r: Row): boolean => r.installed && calls(r) === 0
+/** Unused = installed but never called in the period (only where usage data exists). */
+const isUnused = (r: Row): boolean => r.installed && r.tracked && r.kind !== 'memory' && calls(r) === 0
 
 const SORTS: Record<string, (a: Row, b: Row) => number> = {
   usage: (a, b) => calls(b) - calls(a) || (b.tokens ?? 0) - (a.tokens ?? 0),
@@ -47,6 +56,21 @@ function Tile(p: { title: string; value: string; hint: string; tone?: 'neutral' 
   )
 }
 
+/** Where an entry exists: global (loaded in every project) or in named projects. */
+function existsText(r: Row, l: Lang): string {
+  if (r.scope === 'global') return t(l, 'existsGlobal')
+  const first = r.source.startsWith('project:') ? r.source.slice('project:'.length) : r.source
+  const more = r.also?.length ?? 0
+  return `${t(l, 'existsProject', { name: first })}${more > 0 ? ` ${t(l, 'alsoIn', { n: more })}` : ''}`
+}
+
+/** Where an entry was used, most calls first: `shop 40×, blog 3×`. */
+function usedInText(r: Row, l: Lang): string {
+  const list = r.usedIn ?? []
+  const shown = list.slice(0, 4).map((p) => `${p.label} ${fmt(p.n, l)}×`).join(', ')
+  return list.length > 4 ? `${shown} ${t(l, 'alsoIn', { n: list.length - 4 })}` : shown
+}
+
 function Tile2({ r, l }: { r: Row; l: Lang }) {
   const unused = isUnused(r)
   const n = calls(r)
@@ -57,12 +81,13 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
   const installed = agentNames(r.agents)
   const tokens = r.tokens === null ? t(l, 'tokensUnknown') : t(l, 'tokens', { n: fmt(r.tokens, l) })
   const parts = [source(l, r.source), tokens, r.manual ? t(l, 'manualOnly') : ''].filter(Boolean)
+  const usedIn = usedInText(r, l)
   return (
     <Card title={r.label} description={parts.join(' · ')}>
       <Stack gap="xs">
         <Line gap="xs" wrap>
           <Badge tone={unused ? 'warning' : n > 0 ? 'success' : 'neutral'}>
-            {n > 0 ? t(l, 'usedTimes', { n: fmt(n, l) }) : r.installed ? t(l, 'unused') : t(l, 'notInstalled')}
+            {n > 0 ? t(l, 'usedTimes', { n: fmt(n, l) }) : r.kind === 'memory' ? t(l, 'alwaysBadge') : r.installed ? (r.tracked ? t(l, 'unused') : t(l, 'noData')) : t(l, 'notInstalled')}
           </Badge>
           {r.manual ? <Badge>{t(l, 'freeBadge')}</Badge> : null}
           {!r.installed ? <Badge>{t(l, 'usageOnly')}</Badge> : null}
@@ -74,6 +99,8 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
             <RelativeTime at={r.last} />
           </Line>
         ) : null}
+        {r.installed ? <Text muted size="xs">{`${t(l, 'existsIn')}: ${existsText(r, l)}`}</Text> : null}
+        {usedIn !== '' ? <Text muted size="xs">{`${t(l, 'usedInLabel')}: ${usedIn}`}</Text> : null}
         {installed.length > 0 ? (
           <Line gap="xs" wrap>
             <Text muted size="xs">{t(l, 'installedFor')}</Text>
@@ -93,7 +120,6 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
   const scope = read(scopeBy)
   const sort = SORTS[read(sortBy)] ?? SORTS.usage
   const agent = read(agentSel)
-  const ais = agentNames(rows.flatMap((r) => [...r.agents, ...Object.keys(r.byAgent)]))
   const hasAgent = (r: Row): boolean => agent === 'all' || agentNames([...r.agents, ...Object.keys(r.byAgent)]).includes(agent)
   const shown = rows
     .filter((r) => hasAgent(r) && (!only || isUnused(r)) && (scope === 'all' || r.scope === scope) && (q === '' || r.label.toLowerCase().includes(q)))
@@ -115,12 +141,6 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
           onChange={(v) => set(scopeBy, v)}
         />
       </Grid>
-      <Select
-        label={t(l, 'agentFilter')}
-        value={agent}
-        options={[{ value: 'all', label: t(l, 'allAgents') }, ...ais.map((a) => ({ value: a, label: a }))]}
-        onChange={(v) => set(agentSel, v)}
-      />
       <Switch label={t(l, 'onlyUnused')} checked={only} onChange={(v) => set(onlyUnused, v)} />
       {shown.length === 0 ? <EmptyState title={t(l, empty)} /> : (
         <Grid columns={1} gap="sm">
@@ -131,19 +151,32 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
   )
 }
 
-/** Markdown list of everything installed and unused in the period, to copy by hand. */
-function cleanupList(rows: Row[], period: string, l: Lang): string {
-  const lines = rows
-    .filter((r) => isUnused(r) && r.scope === 'global' && r.kind !== 'plugin' && r.kind !== 'memory')
-    .sort((a, b) => (b.tokens ?? 0) - (a.tokens ?? 0))
-    .map((r) => `- ${r.kind} ${r.label} [${agentNames(r.agents).join(', ') || '?'}] (${source(l, r.source)}, ${r.tokens === null ? t(l, 'tokensUnknown') : t(l, 'tokens', { n: r.tokens })})`)
-  return [`# ${t(l, 'cleanupTitle', { p: period })}`, t(l, 'cleanupHint'), '', ...lines].join('\n')
+/** Plain hints on how to reduce what is loaded. No recommendation about a specific entry. */
+function InfoBox({ l }: { l: Lang }) {
+  return (
+    <Collapsible title={t(l, 'infoTitle')} description={t(l, 'infoNote')}>
+      <Stack gap="xs">
+        {(['tip.1', 'tip.2', 'tip.3', 'tip.4', 'tip.5'] as const).map((k) => (
+          <Text key={k} size="xs">{`• ${t(l, k)}`}</Text>
+        ))}
+      </Stack>
+    </Collapsible>
+  )
 }
 
 export default function Panel() {
   const l = read(lang)
   const s = read(snap)
-  if (s === null) return <Text muted>{t(l, 'loading')}</Text>
+  if (s === null) {
+    return read(failed) ? (
+      <Stack gap="sm">
+        <Text muted>{t(l, 'loadFailed')}</Text>
+        <Button size="sm" onPress={load}>{t(l, 'retry')}</Button>
+      </Stack>
+    ) : (
+      <Text muted>{t(l, 'loading')}</Text>
+    )
+  }
   const by = (k: Row['kind']) => s.rows.filter((r) => r.kind === k)
   const skills = by('skill')
   const mcp = by('mcp')
@@ -151,17 +184,21 @@ export default function Panel() {
   const plugins = by('plugin')
   const memory = by('memory')
 
+  // The AI filter also decides what the tiles add up: one AI's context, never a mix. "All" means Claude here.
+  const ais = agentNames(s.rows.flatMap((r) => [...r.agents, ...Object.keys(r.byAgent)]))
+  const tileAi = read(agentSel) === 'all' ? 'Claude' : read(agentSel)
+  const forAi = (r: Row): boolean => agentNames(r.agents).includes(tileAi)
   // Totals count global items only: project items load just inside their project.
-  const global = s.rows.filter((r) => r.scope === 'global' && r.installed)
+  const global = s.rows.filter((r) => r.scope === 'global' && r.installed && forAi(r))
   const loaded = global.reduce((n, r) => n + (r.kind !== 'plugin' ? r.tokens ?? 0 : 0), 0)
   const unusedRows = global.filter((r) => isUnused(r) && r.kind !== 'plugin' && r.kind !== 'memory')
-  const saving = unusedRows.reduce((n, r) => n + (r.tokens ?? 0), 0)
-  const total = s.rows.reduce((n, r) => n + calls(r), 0) + s.tools.reduce((n, x) => n + x.count, 0)
+  const unusedTokens = unusedRows.reduce((n, r) => n + (r.tokens ?? 0), 0)
+  const total = totalCalls(s.rows, s.toolCalls)
   const maxTool = Math.max(1, ...s.tools.map((x) => x.count))
   const period = s.range === 0 ? t(l, 'period.0') : t(l, 'period.n', { n: s.range })
   const warn = (n: number) => (n > 0 ? 'warning' : 'success')
-  const unusedOf = (rows: Row[]) => rows.filter((r) => r.scope === 'global' && isUnused(r)).length
-  const globalOf = (rows: Row[]) => rows.filter((r) => r.scope === 'global' && r.installed).length
+  const unusedOf = (rows: Row[]) => rows.filter((r) => r.scope === 'global' && forAi(r) && isUnused(r)).length
+  const globalOf = (rows: Row[]) => rows.filter((r) => r.scope === 'global' && r.installed && forAi(r)).length
 
   return (
     <Stack gap="md">
@@ -179,7 +216,7 @@ export default function Panel() {
           value={read(range) === 0 && read(project) === 'all' ? 'current' : read(project)}
           options={[
             ...(read(range) === 0 ? [] : [{ value: 'all', label: t(l, 'scopeAll') }]),
-            { value: 'current', label: t(l, 'scopeCurrent', { name: s.projects[0]?.label ?? '–' }) },
+            { value: 'current', label: t(l, 'scopeCurrent', { name: s.current?.label ?? '–' }) },
             ...s.projects.map((p) => ({ value: p.slug, label: p.label }))
           ]}
           onChange={(v) => {
@@ -197,6 +234,12 @@ export default function Panel() {
           }}
         />
       </Grid>
+      <Select
+        label={t(l, 'agentFilter')}
+        value={read(agentSel)}
+        options={[{ value: 'all', label: t(l, 'allAgents') }, ...ais.map((a) => ({ value: a, label: a }))]}
+        onChange={(v) => set(agentSel, v)}
+      />
       {s.session !== null && s.project !== null ? (
         <Line gap="xs" wrap>
           <Text muted size="xs">{t(l, 'sessionInfo', { name: s.project.label })}</Text>
@@ -207,24 +250,24 @@ export default function Panel() {
       {!s.importing.done ? (
         <Callout tone="neutral" title={t(l, 'importingTitle')}>
           <Stack gap="xs">
-            <Text size="sm">{t(l, 'importing', { done: s.importing.files, total: s.importing.total })}</Text>
+            {s.importing.total > 0 ? <Text size="sm">{t(l, 'importing', { done: s.importing.files, total: s.importing.total })}</Text> : null}
             <Progress label={t(l, 'importingTitle')} labelHidden value={s.importing.total > 0 ? Math.round((s.importing.files / s.importing.total) * 100) : 0} />
           </Stack>
         </Callout>
       ) : null}
 
+      {read(showTiles) ? (
       <Grid columns={2} gap="sm">
-        <Tile title={t(l, 'alwaysLoaded')} value={`≈ ${fmt(loaded, l)}`} hint={t(l, 'alwaysLoadedHint')} />
-        <Tile title={t(l, 'savings')} value={`≈ ${fmt(saving, l)}`} hint={t(l, 'savingsHint', { n: unusedRows.length })} tone={warn(saving)} />
+        <Tile title={t(l, 'alwaysLoaded')} value={`≈ ${fmt(loaded, l)}`} hint={t(l, 'alwaysLoadedHint', { ai: tileAi })} />
+        <Tile title={t(l, 'savings')} value={`≈ ${fmt(unusedTokens, l)}`} hint={t(l, 'savingsHint', { n: unusedRows.length })} tone={warn(unusedTokens)} />
         <Tile title={t(l, 'skills')} value={`${unusedOf(skills)} / ${globalOf(skills)}`} hint={t(l, 'unused')} tone={warn(unusedOf(skills))} />
         <Tile title={t(l, 'mcp')} value={`${unusedOf(mcp)} / ${globalOf(mcp)}`} hint={t(l, 'unused')} tone={warn(unusedOf(mcp))} />
         <Tile title={t(l, 'calls')} value={fmt(total, l)} hint={period} />
         <Tile title={t(l, 'agents')} value={`${unusedOf(agents)} / ${globalOf(agents)}`} hint={t(l, 'unused')} />
       </Grid>
+      ) : null}
 
-      <Collapsible title={t(l, 'cleanupTitle', { p: period })} description={t(l, 'cleanupHint')}>
-        <CodeView code={cleanupList(s.rows, period, l)} language="markdown" wrap maxHeight="md" label={t(l, 'cleanupTitle', { p: period })} />
-      </Collapsible>
+      <InfoBox l={l} />
 
       <Tabs label={t(l, 'area')} value={read(tab)} onChange={(v) => set(tab, v)}>
         <Tab value="skill" label={`${t(l, 'skills')} ${skills.length}`}>
@@ -241,6 +284,7 @@ export default function Panel() {
         </Tab>
         <Tab value="other" label={t(l, 'other')}>
           <Stack gap="md">
+            <Switch label={t(l, 'showTiles')} checked={read(showTiles)} onChange={(v) => set(showTiles, v)} />
             <Select
               label={t(l, 'language')}
               value={l}

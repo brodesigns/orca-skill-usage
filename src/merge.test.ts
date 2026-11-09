@@ -1,7 +1,7 @@
 import { assert, test } from 'orca/testing'
-import { mergeRows } from './merge'
+import { isTracked, mergeRows } from './merge'
 import type { Item } from './inventory'
-import { add, dayOf, emptyStats } from './usage'
+import { add, dayOf, emptyStats, projKey } from './usage'
 
 const NOW = Date.now()
 const DAY = 86_400_000
@@ -45,4 +45,25 @@ test('lists used-but-not-installed entries, never typed built-ins like /model', 
   add(st, 'cmds', 'model', 'claude', NOW, 'direct')
   const rows = mergeRows([], st)
   assert.deepEqual(rows.map((r) => `${r.kind}:${r.id}:${r.installed}`), ['agent:Explore:false'])
+})
+
+test('rows without usage data are flagged, not treated as unused', () => {
+  assert.equal(isTracked({ kind: 'mcp', agents: ['gemini'] }), false)
+  assert.equal(isTracked({ kind: 'mcp', agents: ['codex'] }), false)
+  assert.equal(isTracked({ kind: 'skill', agents: ['codex'] }), true)
+  assert.equal(isTracked({ kind: 'mcp', agents: ['claude', 'codex'] }), true)
+  const rows = mergeRows([item('mcp', 'g', { agents: ['gemini'] })], emptyStats())
+  assert.equal(rows[0].tracked, false)
+})
+
+
+test('rows list the projects their calls came from, most calls first, as short keys', () => {
+  const st = emptyStats()
+  for (let i = 0; i < 9; i++) add(st, 'skills', 'shop-sync', 'claude', NOW, 'auto', projKey('shop'))
+  add(st, 'skills', 'shop-sync', 'claude', NOW, 'auto', projKey('blog'))
+  add(st, 'cmds', 'shop-sync', 'claude', NOW, 'direct', projKey('blog'))
+  const [row] = mergeRows([item('skill', 'shop-sync')], st)
+  assert.deepEqual(row.usedInKeys, [[projKey('shop'), 9], [projKey('blog'), 2]])
+  assert.equal('proj' in row, false)
+  assert.equal(mergeRows([item('skill', 'unused')], st)[0].usedInKeys, undefined)
 })

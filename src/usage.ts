@@ -1,7 +1,8 @@
 // Pure logic, no Orca API (easy to test).
 /** Calls per day: [made by the model, typed by the person]. */
 export type Day = [number, number]
-export type Entry = { last: number; by: Record<string, number>; days: Record<string, Day> }
+/** `proj`: calls per project (short key, see `projKey`) since the first import (not pruned by day); used to spot entries that only one project needs. */
+export type Entry = { last: number; by: Record<string, number>; days: Record<string, Day>; proj?: Record<string, number> }
 export type Bucket = Record<string, Entry>
 /** `cmds` holds slash commands the person typed; they are matched to skills when rows are built. */
 export type Stats = { skills: Bucket; mcp: Bucket; agents: Bucket; tools: Bucket; cmds: Bucket }
@@ -23,6 +24,17 @@ const EVICT_AT = 650
 const MAX_NAME = 120
 const MAX_AGENTS = 20
 export const KEEP_DAYS = 100
+const MAX_PROJ = 30
+
+/** Short stable key of a project folder name (FNV-1a, base 36): keeps the stored counters small. */
+export function projKey(slug: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < slug.length; i++) {
+    h ^= slug.charCodeAt(i)
+    h = Math.imul(h, 0x01000193) >>> 0
+  }
+  return h.toString(36)
+}
 
 export type Call =
   | { bucket: 'skills' | 'agents' | 'tools'; id: string }
@@ -38,6 +50,21 @@ function field(input: unknown, key: string): unknown {
   return typeof input === 'object' && input !== null && !Array.isArray(input)
     ? (input as Record<string, unknown>)[key]
     : undefined
+}
+
+/** The text of a shell-like call: only the usual command fields, bounded, never the whole input. */
+function shellText(input: unknown): string {
+  try {
+    if (typeof input === 'string') return input.slice(0, 4000)
+    const parts: string[] = []
+    for (const key of ['command', 'cmd', 'arguments', 'input', 'script']) {
+      const v = field(input, key)
+      if (v !== undefined) parts.push(typeof v === 'string' ? v.slice(0, 2000) : JSON.stringify(v).slice(0, 2000))
+    }
+    return parts.join(' ')
+  } catch {
+    return ''
+  }
 }
 
 const SKILL_FILE = /skills\/([A-Za-z0-9._-]{1,120})\/SKILL\.md/
@@ -70,21 +97,17 @@ export function classify(tool: string, input: unknown, agent = 'claude'): Call |
     return { bucket: 'agents', id }
   }
   if (!/claude/i.test(agent)) {
-    let text = ''
-    try {
-      text = JSON.stringify(input ?? '').slice(0, 4000)
-    } catch {
-      /* not JSON-safe: not a skill read */
-    }
-    const m = SKILL_FILE.exec(text)
+    const m = SKILL_FILE.exec(shellText(input))
     if (m) return { bucket: 'skills', id: m[1] }
   }
   const id = clean(tool)
-  return id === null ? null : { bucket: 'tools', id }
+  if (id === null) return null
+  // Tool names come from agents: only plain identifiers are kept, anything else is counted as "other".
+  return { bucket: 'tools', id: /^[\w.:-]{1,120}$/.test(id) ? id : 'other' }
 }
 
 /** Adds one call to `stats` IN PLACE (a large import must not copy the bucket per call). */
-export function add(stats: Stats, bucket: BucketName, id: string, agent: string, ts: number, mode: Mode = 'auto'): void {
+export function add(stats: Stats, bucket: BucketName, id: string, agent: string, ts: number, mode: Mode = 'auto', project?: string): void {
   const day = dayOf(ts)
   if (day === null) return
   const b = stats[bucket]
@@ -94,6 +117,14 @@ export function add(stats: Stats, bucket: BucketName, id: string, agent: string,
   const d = (e.days[day] ??= [0, 0])
   d[mode === 'auto' ? 0 : 1] += 1
   if (ts > e.last) e.last = ts
+  if (project !== undefined) {
+    const p = (e.proj ??= Object.create(null) as Record<string, number>)
+    p[project] = (p[project] ?? 0) + 1
+    if (Object.keys(p).length > MAX_PROJ) {
+      const rarest = Object.keys(p).sort((a, b) => p[a] - p[b])[0]
+      delete p[rarest]
+    }
+  }
   if (Object.keys(b).length > EVICT_AT) evict(b)
 }
 
@@ -139,6 +170,10 @@ export function mergeStats(a: Stats, b: Stats): Stats {
         const t = (out[name][id] ??= { last: 0, by: Object.create(null), days: Object.create(null) })
         t.last = Math.max(t.last, e.last)
         for (const [who, n] of Object.entries(e.by)) t.by[who] = (t.by[who] ?? 0) + n
+        for (const [p, n] of Object.entries(e.proj ?? {})) {
+          t.proj ??= Object.create(null) as Record<string, number>
+          t.proj[p] = (t.proj[p] ?? 0) + n
+        }
         for (const [day, d] of Object.entries(e.days)) {
           const x = (t.days[day] ??= [0, 0])
           x[0] += d[0]
@@ -170,7 +205,11 @@ export function parseStats(raw: unknown): Stats {
       if (typeof v.by === 'object' && v.by !== null) {
         for (const [a, n] of Object.entries(v.by)) if (typeof n === 'number' && Number.isFinite(n)) by[a] = n
       }
-      out[key][id] = { last: num(v.last), by, days }
+      const proj: Record<string, number> = Object.create(null)
+      if (typeof v.proj === 'object' && v.proj !== null) {
+        for (const [p, n] of Object.entries(v.proj)) if (typeof n === 'number' && Number.isFinite(n) && n > 0) proj[p] = n
+      }
+      out[key][id] = { last: num(v.last), by, days, ...(Object.keys(proj).length > 0 ? { proj } : {}) }
     }
   }
   return out

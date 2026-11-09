@@ -1,7 +1,8 @@
 // Inventory: what does Claude Code load that costs context? Read-only.
+import { constants } from 'node:fs'
 import { open, readdir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join, sep } from 'node:path'
+import { basename, dirname, isAbsolute, join, sep } from 'node:path'
 
 export type Item = {
   kind: 'skill' | 'mcp' | 'agent' | 'plugin' | 'memory'
@@ -14,6 +15,8 @@ export type Item = {
   scope: 'global' | 'project'
   /** The AIs this entry is installed for: claude, codex, gemini, agents (shared `.agents` folder). */
   agents: string[]
+  /** Other projects that hold the same project-level entry. */
+  also?: string[]
   note?: string
 }
 
@@ -23,6 +26,7 @@ const MAX_FILE = 256 * 1024
 const MAX_JSON = 16 * 1024 * 1024
 const MAX_ITEMS = 400
 const MAX_NAME = 120
+const MAX_PROJECTS = 200
 
 /** Rough estimate: 4 characters per token. */
 export const estimateTokens = (chars: number): number => Math.ceil(chars / 4)
@@ -52,7 +56,8 @@ export function parseFrontmatter(text: string): { name?: string; description?: s
 async function read(path: string, limit = MAX_FILE): Promise<string | null> {
   let handle
   try {
-    handle = await open(path, 'r')
+    // Non-blocking open: a FIFO must not hang the worker; the regular-file check follows on the open handle.
+    handle = await open(path, constants.O_RDONLY | constants.O_NONBLOCK)
     const info = await handle.stat()
     if (!info.isFile()) return null
     const buffer = Buffer.alloc(Math.min(info.size, limit))
@@ -115,7 +120,7 @@ async function scanAgents(root: string, source: string, prefix: string): Promise
       source,
       tokens: estimateTokens(`${name}: ${fm.description ?? ''}`.length),
       manual: false,
-      scope: 'global'
+      scope: 'global',
     })
   }
   return out
@@ -136,28 +141,23 @@ async function readJson(path: string): Promise<Record<string, unknown>> {
   }
 }
 
-/** MCP servers from `~/.claude.json`: global and per project. Never reads or outputs values (env, headers, tokens). */
+/** MCP servers from `~/.claude.json`: global, and one entry per project. Never reads or outputs values (env, headers, tokens). */
 async function scanMcp(home: string): Promise<Base[]> {
   const cfg = await readJson(join(home, '.claude.json'))
-  const where = new Map<string, number>()
-  const global = Object.keys(asRecord(cfg.mcpServers))
-  for (const n of global) where.set(n, 0)
-  for (const p of Object.values(asRecord(cfg.projects))) {
-    for (const n of Object.keys(asRecord(asRecord(p).mcpServers))) {
-      if (!where.has(n)) where.set(n, 0)
-      if (!global.includes(n)) where.set(n, (where.get(n) ?? 0) + 1)
+  const out: Base[] = []
+  const base = { tokens: null, manual: false }
+  for (const n of Object.keys(asRecord(cfg.mcpServers)).slice(0, MAX_ITEMS)) {
+    // A server's tool definitions cost context, but their size is unknown without starting the server.
+    out.push({ kind: 'mcp', id: n.slice(0, MAX_NAME), label: n.slice(0, MAX_NAME), source: 'global', scope: 'global', ...base })
+  }
+  for (const [path, project] of Object.entries(asRecord(cfg.projects)).slice(0, MAX_PROJECTS)) {
+    if (!isAbsolute(path)) continue
+    const name = basename(path).slice(0, MAX_NAME)
+    for (const n of Object.keys(asRecord(asRecord(project).mcpServers)).slice(0, 50)) {
+      out.push({ kind: 'mcp', id: n.slice(0, MAX_NAME), label: n.slice(0, MAX_NAME), source: `project:${name}`, scope: 'project', ...base })
     }
   }
-  return [...where].slice(0, MAX_ITEMS).map(([n, projects]) => ({
-    kind: 'mcp' as const,
-    id: n,
-    label: n,
-    source: global.includes(n) ? 'global' : `projects:${projects}`,
-    // A server's tool definitions cost context, but the size is unknown without starting the server.
-    tokens: null,
-    manual: false,
-    scope: global.includes(n) ? ('global' as const) : ('project' as const)
-  }))
+  return out
 }
 
 /** The install path only counts if it really lies below ~/.claude/plugins (a plugin file is untrusted input). */
@@ -213,17 +213,15 @@ async function scanMemory(home: string): Promise<Base[]> {
   ]
 }
 
-const MAX_PROJECTS = 200
-
 /** Project-level skills, CLAUDE.md and .mcp.json (server names only) of the projects Claude Code knows. */
 async function scanProjects(home: string): Promise<Base[]> {
   const cfg = await readJson(join(home, '.claude.json'))
   const paths = Object.keys(asRecord(cfg.projects))
-    .filter((p) => p.startsWith('/') && p !== home && !p.includes('\0'))
+    .filter((p) => isAbsolute(p) && p !== home && !p.includes('\0'))
     .slice(0, MAX_PROJECTS)
   const out: Base[] = []
   for (const path of paths) {
-    const name = (path.split('/').filter(Boolean).pop() ?? path).slice(0, MAX_NAME)
+    const name = basename(path).slice(0, MAX_NAME)
     const source = `project:${name}`
     out.push(...(await scanSkills(join(path, '.claude', 'skills'), source, '', 'project')))
     const memory = await read(join(path, 'CLAUDE.md'))
@@ -242,8 +240,8 @@ async function scanOtherMcp(home: string): Promise<Item[]> {
   const out: Item[] = []
   const toml = await read(join(home, '.codex', 'config.toml'))
   if (toml !== null) {
-    for (const m of toml.matchAll(/^\[mcp_servers\.("?)([A-Za-z0-9_.-]{1,120})\1(?:\.[^\]]*)?\]/gm)) {
-      const name = m[2]
+    for (const m of toml.matchAll(/^\[mcp_servers\.(?:"([^"\n]{1,120})"|([A-Za-z0-9_-]{1,120}))(?:\.[^\]\n]*)?\]/gm)) {
+      const name = m[1] ?? m[2]
       if (!out.some((i) => i.id === name)) out.push({ kind: 'mcp', id: name, label: name, source: 'global', tokens: null, manual: false, scope: 'global', agents: ['codex'] })
     }
   }
@@ -265,6 +263,26 @@ async function scanOtherMemory(home: string): Promise<Item[]> {
 }
 
 const tag = (items: Base[], agents: string[]): Item[] => items.map((i) => ({ ...i, agents }))
+
+/** Project folder name (as Claude Code derives it from the path) -> name of the folder, for projects registered in `~/.claude.json`. */
+export async function scanProjectNames(home: string = homedir()): Promise<Record<string, string>> {
+  const cfg = await readJson(join(home, '.claude.json'))
+  const out: Record<string, string> = Object.create(null)
+  for (const path of Object.keys(asRecord(cfg.projects)).slice(0, MAX_PROJECTS)) {
+    if (isAbsolute(path) && !path.includes('\0')) out[path.replace(/[^a-zA-Z0-9]/g, '-')] = basename(path).slice(0, 60)
+  }
+  return out
+}
+
+/** Folder name as Claude Code derives it -> name of the folder that holds the project, to tell apart projects with the same name. */
+export async function scanProjectParents(home: string = homedir()): Promise<Record<string, string>> {
+  const cfg = await readJson(join(home, '.claude.json'))
+  const out: Record<string, string> = Object.create(null)
+  for (const path of Object.keys(asRecord(cfg.projects)).slice(0, MAX_PROJECTS)) {
+    if (isAbsolute(path) && !path.includes('\0')) out[path.replace(/[^a-zA-Z0-9]/g, '-')] = basename(dirname(path)).slice(0, 60)
+  }
+  return out
+}
 
 export async function scanInventory(home: string = homedir()): Promise<Item[]> {
   const [claudeSkills, codexSkills, sharedSkills, claudeAgents, plugins, mcp, memory, projects, otherMcp, otherMemory] = await Promise.all([
@@ -298,7 +316,13 @@ export async function scanInventory(home: string = homedir()): Promise<Item[]> {
     const key = `${item.kind}:${item.id}`
     const first = byKey.get(key)
     if (first === undefined) byKey.set(key, item)
-    else for (const a of item.agents) if (!first.agents.includes(a)) first.agents.push(a)
+    else {
+      for (const a of item.agents) if (!first.agents.includes(a)) first.agents.push(a)
+      // The same project-level entry in another project: remember where it also applies.
+      if (first.scope === 'project' && item.scope === 'project' && item.source !== first.source && (first.also?.length ?? 0) < 20) {
+        first.also = [...(first.also ?? []), item.source]
+      }
+    }
   }
   return [...byKey.values()].slice(0, MAX_ITEMS * 3)
 }

@@ -10,6 +10,10 @@ export type Row = {
   scope: Item['scope']
   /** The AIs the entry is installed for. */
   agents: string[]
+  /** Other projects that hold the same project-level entry. */
+  also?: string[]
+  /** Usage data exists for this entry (Gemini and Codex MCP are not imported, so they must not look unused). */
+  tracked: boolean
   tokens: number | null
   manual: boolean
   installed: boolean
@@ -18,16 +22,26 @@ export type Row = {
   direct: number
   last: number | null
   byAgent: Record<string, number>
+  /** Projects the calls came from (short keys) with their call counts, most first. Worker only: it turns them into names. */
+  usedInKeys?: [string, number][]
+  /** Set by the worker from `usedInKeys`: the projects by name. */
+  usedIn?: { label: string; n: number }[]
   note?: string
+}
+
+/** Claude Code is read completely; for Codex and the shared folder only skill reads are imported. */
+export function isTracked(it: Pick<Item, 'kind' | 'agents'>): boolean {
+  if (it.agents.includes('claude')) return true
+  return it.kind === 'skill' && (it.agents.includes('codex') || it.agents.includes('agents'))
 }
 
 /** Claude Code normalizes MCP names (hyphens become underscores). */
 export const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '_')
 
-type Use = { auto: number; direct: number; last: number | null; byAgent: Record<string, number> }
+type Use = { auto: number; direct: number; last: number | null; byAgent: Record<string, number>; proj: Record<string, number> }
 
 function use(entries: { e: Entry | undefined; since: string | null }[]): Use {
-  const out: Use = { auto: 0, direct: 0, last: null, byAgent: Object.create(null) }
+  const out: Use = { auto: 0, direct: 0, last: null, byAgent: Object.create(null), proj: Object.create(null) }
   for (const { e, since } of entries) {
     if (!e) continue
     const c = countIn(e, since)
@@ -36,18 +50,24 @@ function use(entries: { e: Entry | undefined; since: string | null }[]): Use {
     out.direct += c.direct
     out.last = Math.max(out.last ?? 0, e.last)
     for (const [a, n] of Object.entries(e.by)) out.byAgent[a] = (out.byAgent[a] ?? 0) + n
+    for (const [p, n] of Object.entries(e.proj ?? {})) out.proj[p] = (out.proj[p] ?? 0) + n
   }
   return out
 }
 
-const plain = (u: Use): Use => ({ ...u, byAgent: { ...u.byAgent } })
+/** The public part of a use; the per-project counts become a short, sorted list for the worker. */
+function plain(u: Use): Omit<Use, 'proj'> & { usedInKeys?: [string, number][] } {
+  const { proj, ...rest } = u
+  const keys = Object.entries(proj).sort((a, b) => b[1] - a[1]).slice(0, 8)
+  return { ...rest, byAgent: { ...rest.byAgent }, ...(keys.length > 0 ? { usedInKeys: keys } : {}) }
+}
 
 export function mergeRows(items: Item[], stats: Stats, since: string | null = null): Row[] {
   const rows: Row[] = []
   const claimed = { skills: new Set<string>(), cmds: new Set<string>(), agents: new Set<string>(), mcp: new Set<string>() }
 
   for (const it of items) {
-    let u: Use = { auto: 0, direct: 0, last: null, byAgent: {} }
+    let u: Use = { auto: 0, direct: 0, last: null, byAgent: {}, proj: {} }
     let note = it.note
     if (it.kind === 'skill') {
       // Exact name first; the bare name only if no other row has claimed that key yet.
@@ -75,12 +95,25 @@ export function mergeRows(items: Item[], stats: Stats, since: string | null = nu
       })
       if (used.length) note = `tools:${used.length}:${used.map(([id]) => id.split('/').slice(1).join('/')).slice(0, 4).join(', ')}`
     }
-    rows.push({ ...it, note, installed: true, ...plain(u) })
+    rows.push({ ...it, note, installed: true, tracked: isTracked(it), ...plain(u) })
+  }
+
+  // A plugin has no calls of its own: its use is the use of its skills and agents.
+  for (const p of rows) {
+    if (p.kind !== 'plugin') continue
+    for (const r of rows) {
+      if ((r.kind === 'skill' || r.kind === 'agent') && r.id.startsWith(`${p.id}:`)) {
+        p.auto += r.auto
+        p.direct += r.direct
+        if (r.last !== null) p.last = Math.max(p.last ?? 0, r.last)
+        for (const [a, n] of Object.entries(r.byAgent)) p.byAgent[a] = (p.byAgent[a] ?? 0) + n
+      }
+    }
   }
 
   // Used but not found in the inventory (built-in agents, project skills, plugin servers).
   const orphan = (kind: Row['kind'], id: string, source: string, u: Use): void => {
-    if (u.auto + u.direct > 0) rows.push({ kind, id, label: id, source, scope: 'global', agents: [], tokens: null, manual: false, installed: false, ...plain(u) })
+    if (u.auto + u.direct > 0) rows.push({ kind, id, label: id, source, scope: 'global', agents: [], tracked: true, tokens: null, manual: false, installed: false, ...plain(u) })
   }
   for (const [id, e] of Object.entries(stats.skills)) {
     if (!claimed.skills.has(id)) orphan('skill', id, 'elsewhere', use([{ e, since }, { e: claimed.cmds.has(id) ? undefined : stats.cmds[id], since }]))

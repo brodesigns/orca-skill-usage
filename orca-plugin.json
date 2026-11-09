@@ -2,8 +2,8 @@
   "manifestVersion": 2,
   "id": "skill-usage",
   "name": "Skill Usage",
-  "version": "0.1.0",
-  "description": "Shows which skills, MCP servers, agents and plugins your agents really use, and which only cost context tokens. English and German. Local only, no tracking.",
+  "version": "1.0.0",
+  "description": "See which skills, MCP servers, agents and plugins of Claude Code, Codex and Gemini you really use, per project, and what the unused ones cost in context tokens. English and German. Local only, no tracking.",
   "engines": {
     "orca": ">=1.4.248"
   },
@@ -40,6 +40,42 @@
     },
     {
       "kind": "workspace:read"
+    }
+  ],
+  "cover": {
+    "path": "assets/cover.png",
+    "alt": "Skill Usage by Orca: the panel with summary tiles for always-loaded tokens, unused skills, MCP servers and agents"
+  },
+  "screenshots": [
+    {
+      "path": "assets/screenshot-overview.png",
+      "alt": "Summary tiles: tokens always loaded per session, tokens in unused entries, unused skills, MCP servers and agents, number of calls",
+      "caption": "What is loaded, what is used"
+    },
+    {
+      "path": "assets/screenshot-skills.png",
+      "alt": "Skill cards showing calls, which AIs the skill is installed for, where it exists and which projects used it",
+      "caption": "Where it exists, where it is used"
+    },
+    {
+      "path": "assets/screenshot-project.png",
+      "alt": "The panel filtered to one project and the last 7 days",
+      "caption": "One project, one period"
+    },
+    {
+      "path": "assets/screenshot-mcp.png",
+      "alt": "MCP server cards with the projects each server was used in",
+      "caption": "MCP servers per project"
+    },
+    {
+      "path": "assets/screenshot-unused.png",
+      "alt": "Only the entries that were not called in the period, sorted by token cost",
+      "caption": "Find what costs but never runs"
+    },
+    {
+      "path": "assets/screenshot-access.png",
+      "alt": "Four checkmarks explaining what the plugin does with the Full access label: read-only, names not secrets, no network, no actions",
+      "caption": "Why Full access? Read-only, no network, no actions"
     }
   ]
 }

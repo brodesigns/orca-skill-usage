@@ -1,5 +1,5 @@
 import { assert, test } from 'orca/testing'
-import { add, classify, countIn, dayOf, emptyStats, mergeStats, parseStats, prune } from './usage'
+import { add, classify, countIn, dayOf, emptyStats, mergeStats, parseStats, projKey, prune } from './usage'
 import { agentName, agentNames, note, source, t } from './i18n'
 
 const NOW = Date.parse('2026-11-09T12:00:00Z')
@@ -75,7 +75,9 @@ test('translates codes in both languages', () => {
   assert.equal(source('en', 'plugin:user'), 'plugin user')
   assert.equal(source('en', 'project:shop'), 'project shop')
   assert.equal(source('en', 'marketplace:a:b'), 'a:b')
-  assert.equal(source('en', 'codex'), 'codex')
+  assert.equal(source('en', 'codex'), 'Codex')
+  assert.equal(source('de', 'agents'), 'Gemeinsam (.agents)')
+  assert.equal(source('en', 'some-folder'), 'some-folder')
   assert.equal(note('en', 'tools:2:a, b'), '2 tool(s) used: a, b')
   assert.equal(note('de', 'content:12'), 'Inhalt beim Aufruf: ca. 12 Token')
   assert.equal(t('en', 'unused'), 'unused')
@@ -88,4 +90,41 @@ test('names the AI behind an entry', () => {
   assert.equal(agentName('agents'), 'Shared (.agents)')
   assert.equal(agentName('my-agent'), 'my-agent')
   assert.deepEqual(agentNames(['codex', 'claude-code', 'claude']), ['Claude', 'Codex (ChatGPT)'])
+})
+
+test('hook input: odd tool names become "other", only command fields are searched', () => {
+  assert.deepEqual(classify('Run `rm -rf /` now', {}), { bucket: 'tools', id: 'other' })
+  const big = { content: 'x'.repeat(5_000_000), command: 'cat /h/skills/sora/SKILL.md' }
+  assert.deepEqual(classify('shell', big, 'codex'), { bucket: 'skills', id: 'sora' })
+  assert.deepEqual(classify('write_file', { content: 'skills/hidden/SKILL.md' }, 'codex'), { bucket: 'tools', id: 'write_file' })
+})
+
+test('attributes calls to projects; keys are short, stable and merge/parse safely', () => {
+  assert.equal(projKey('-Users-me-shop'), projKey('-Users-me-shop'))
+  assert.notEqual(projKey('-Users-me-shop'), projKey('-Users-me-blog'))
+  assert.equal(projKey('-Users-me-shop').length <= 8, true)
+  const a = emptyStats()
+  add(a, 'skills', 'x', 'claude', NOW, 'auto', projKey('shop'))
+  add(a, 'skills', 'x', 'claude', NOW, 'auto', projKey('shop'))
+  add(a, 'skills', 'x', 'claude', NOW, 'auto', projKey('blog'))
+  const b = emptyStats()
+  add(b, 'skills', 'x', 'claude', NOW, 'auto', projKey('shop'))
+  const m = mergeStats(a, b)
+  assert.equal(m.skills.x.proj?.[projKey('shop')], 3)
+  assert.equal(m.skills.x.proj?.[projKey('blog')], 1)
+  const parsed = parseStats(JSON.parse(JSON.stringify(m)))
+  assert.equal(parsed.skills.x.proj?.[projKey('shop')], 3)
+  const hostile = parseStats({ skills: { y: { last: 1, by: {}, days: { '2026-11-01': [1, 0] }, proj: { ok: 2, bad: 'x', neg: -4 } } } })
+  assert.deepEqual({ ...hostile.skills.y.proj }, { ok: 2 })
+  // Calls without a project (hooks of other AIs) leave `proj` unset.
+  const c = emptyStats()
+  add(c, 'skills', 'z', 'codex', NOW)
+  assert.equal(c.skills.z.proj, undefined)
+})
+
+test('a missing text falls back instead of breaking', () => {
+  assert.equal(t('de', 'nope' as never), 'nope')
+  assert.equal(t('en', 'existsGlobal').length > 0, true)
+  assert.equal(t('de', 'usedInLabel').startsWith('Genutzt in'), true)
+  assert.equal(t('xx' as never, 'existsGlobal').length > 0, true)
 })

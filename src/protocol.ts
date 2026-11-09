@@ -33,6 +33,10 @@ declare module 'orca' {
     scope: 'global' | 'project'
     /** The AIs the entry is installed for (claude, codex, gemini, agents); empty when only seen in use. */
     agents: string[]
+    /** Other projects that hold the same project-level entry (`project:name`). */
+    also?: string[]
+    /** False when no usage data exists for the AI (Gemini, Codex MCP): such rows are never "unused". */
+    tracked: boolean
     /** Estimated tokens the entry keeps in context permanently; null = unknown. */
     tokens: number | null
     /** Manual invocation only (costs nothing in context). */
@@ -45,6 +49,8 @@ declare module 'orca' {
     last: number | null
     /** Calls per AI in the period, as reported by the transcripts and hooks. */
     byAgent: Record<string, number>
+    /** Projects the entry was used in (all projects, whatever the picker shows), most calls first. */
+    usedIn?: { label: string; n: number }[]
     /** Note code: content:N, tools:N:list, enabled, disabled. The panel translates it. */
     note?: string
   }
@@ -53,6 +59,8 @@ declare module 'orca' {
     range: number
     /** The project the numbers belong to; null = all projects. */
     project: { slug: string; label: string } | null
+    /** The project "Current project" stands for: the focused workspace's folder, else the newest one. */
+    current: { slug: string; label: string } | null
     /** Recently active projects, newest first, for the picker. */
     projects: { slug: string; label: string }[]
     /** Latest session of the shown project (range 0): last activity in ms. */
@@ -61,6 +69,8 @@ declare module 'orca' {
     rows: Row[]
     /** Calls of the other tools (Bash, Read ...) in the range, by count. */
     tools: { name: string; count: number }[]
+    /** Calls of all other tools in the range (the list above shows only the top ones). */
+    toolCalls: number
     /** Progress of the session import (history, project or session). */
     importing: { done: boolean; files: number; total: number }
   }

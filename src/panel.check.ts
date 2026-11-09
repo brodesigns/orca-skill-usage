@@ -1,26 +1,24 @@
-// `orca plugin check` renders the panel once per scenario, each with the worker on a fresh host.
+// `orca plugin check` and `shot --scenario` render the panel once per scenario, each with the worker on a fresh host.
+// The demo scenarios show made-up numbers (src/demo.ts), so no real skill or project name ever ends up in a picture.
 import { defineCheck } from 'orca/testing'
 
-const now = Date.now()
-const iso = (daysAgo: number): string => new Date(now - daysAgo * 86_400_000).toISOString().slice(0, 10)
-const entry = (days: Record<string, [number, number]>, by: Record<string, number>) => ({ last: now - 86_400_000, by, days })
+const demo = { demo: true }
+const plugin = (values: Record<string, unknown>) => ({ storage: demo, persisted: { plugin: values } })
 
 export default defineCheck({
   fresh: {},
-  used: {
-    storage: {
-      hist: {
-        offsets: {},
-        seen: [],
-        from: 0,
-        stats: {
-          skills: { commit: entry({ [iso(1)]: [9, 3], [iso(5)]: [4, 0] }, { claude: 16 }), deploy: entry({ [iso(3)]: [2, 1] }, { claude: 2, codex: 1 }) },
-          mcp: { 'docs-server/search': entry({ [iso(2)]: [7, 0] }, { claude: 7 }) },
-          agents: { Explore: entry({ [iso(2)]: [5, 0] }, { claude: 5 }) },
-          tools: { Bash: entry({ [iso(1)]: [120, 0] }, { claude: 120 }), Read: entry({ [iso(1)]: [80, 0] }, { claude: 80 }) },
-          cmds: { commit: entry({ [iso(1)]: [0, 3] }, { claude: 3 }) }
-        }
-      }
-    }
-  }
+  // The overview with the summary tiles.
+  demo: { storage: demo },
+  // Cards of the Skills tab: where an entry exists and where it is used.
+  cards: plugin({ showTiles: false, tab: 'skill' }),
+  // Only what was not called in the period.
+  unused: plugin({ showTiles: false, tab: 'skill', onlyUnused: true, sortBy: 'tokens' }),
+  mcp: plugin({ showTiles: false, tab: 'mcp' }),
+  // One project chosen: its own entries and the calls that happened there.
+  project: plugin({ project: '-demo-shop-site', range: 7 }),
+  // The most used tools and the settings.
+  other: plugin({ showTiles: false, tab: 'other' }),
+  // The same in German.
+  de: plugin({ lang: 'de', showTiles: false, tab: 'skill' }),
+  'de-overview': plugin({ lang: 'de' })
 })
