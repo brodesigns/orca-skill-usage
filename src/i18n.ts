@@ -1,5 +1,5 @@
 // Two languages, English first. The panel picks one; the worker only sends language-neutral codes.
-export type Lang = 'en' | 'de'
+export type Lang = 'en' | 'de' | 'es'
 
 const en = {
   title: 'Context balance',
@@ -195,8 +195,105 @@ const de: typeof en = {
   'note.disabled': 'deaktiviert'
 }
 
+const es: typeof en = {
+  title: 'Balance de contexto',
+  rescan: 'Volver a analizar',
+  language: 'Idioma',
+  loading: 'Cargando…',
+  showTiles: 'Mostrar resumen',
+  loadFailed: 'No se han podido cargar los datos.',
+  retry: 'Reintentar',
+  alwaysLoaded: 'Siempre cargado',
+  alwaysLoadedHint: 'tokens por sesión de {ai} (skills, agentes, instrucciones)',
+  savings: 'Cargado pero sin usar',
+  savingsHint: 'tokens en {n} entradas sin llamar en este periodo',
+  skills: 'Skills',
+  mcp: 'MCP',
+  agents: 'Agentes',
+  plugins: 'Plugins',
+  other: 'Otros',
+  calls: 'Llamadas',
+  unused: 'sin usar',
+  alwaysBadge: 'siempre cargado',
+  area: 'Sección',
+  noSkills: 'No se han encontrado skills',
+  noMcp: 'No se han encontrado servidores MCP',
+  noAgents: 'No se han encontrado agentes',
+  noPlugins: 'No se han encontrado plugins',
+  tokens: '≈ {n} tokens',
+  tokensUnknown: 'tokens desconocidos',
+  manualOnly: 'solo manual',
+  usedTimes: 'usado {n}×',
+  notInstalled: 'no instalado',
+  freeBadge: 'no cuesta nada',
+  usageOnly: 'solo visto en uso',
+  lastUsed: 'último uso',
+  toolsByCalls: 'Herramientas por llamadas',
+  noCalls: 'Aún no hay llamadas',
+  reset: 'Reiniciar contadores',
+  footer: 'Los tokens son estimaciones (4 caracteres por token). El coste de MCP se desconoce sin arrancar el servidor. Las entradas de proyecto solo se cargan dentro de su proyecto, así que no están en los totales.',
+  range: 'Periodo',
+  'range.0': 'Última sesión',
+  'range.7': 'Últimos 7 días',
+  'range.30': 'Últimos 30 días',
+  'range.90': 'Últimos 90 días',
+  search: 'Buscar',
+  searchPlaceholder: 'Filtrar por nombre',
+  sort: 'Ordenar por',
+  'sort.usage': 'Más usadas',
+  'sort.tokens': 'Coste en tokens',
+  'sort.name': 'Nombre',
+  'sort.recent': 'Último uso',
+  scope: 'Nivel',
+  projectSel: 'Proyecto',
+  scopeAll: 'Todos los proyectos',
+  scopeCurrent: 'Proyecto actual: {name}',
+  'period.0': 'última sesión',
+  'period.n': 'últimos {n} días',
+  sessionInfo: 'Última sesión de {name}, última actividad',
+  'scope.all': 'Todos',
+  'scope.global': 'Global',
+  'scope.project': 'Proyecto',
+  importingTitle: 'Leyendo sesiones anteriores…',
+  importing: '{done} de {total} ficheros de sesión. Los datos crecen mientras se ejecuta.',
+  split: '{a} del modelo · {d} escritos por ti',
+  noData: 'sin datos de uso',
+  installedFor: 'Instalado para',
+  usedBy: 'Usado por',
+  agentFilter: 'IA',
+  allAgents: 'Todas las IA',
+  onlyUnused: 'Mostrar solo las que no se usan',
+  existsIn: 'Existe en',
+  existsGlobal: 'global (se carga en todos los proyectos)',
+  existsProject: 'proyecto {name}',
+  alsoIn: '+{n} más',
+  usedInLabel: 'Usado en (desde la primera importación)',
+  infoTitle: 'Reducir el contexto',
+  infoNote: 'Este plugin solo muestra datos y nunca cambia un fichero. Formas de reducir lo que se carga:',
+  'tip.1': 'Una skill solo manual (disable-model-invocation: true en su SKILL.md) se carga únicamente cuando la llamas por su nombre; su descripción deja de costar contexto.',
+  'tip.2': 'Una skill que solo se usa en un proyecto va en la carpeta de skills de ese proyecto, no en la global: así solo se carga allí. La tarjeta muestra dónde existe una entrada y dónde se usa.',
+  'tip.3': 'Un plugin se puede desactivar en los ajustes: todas sus skills y agentes dejan de cargarse.',
+  'tip.4': 'Los servidores MCP se pueden añadir por proyecto en vez de globales. La lista de herramientas de cada servidor cuesta contexto en cada sesión.',
+  'tip.5': 'Las entradas que vienen con Orca o con un plugin las gestionan ellos: déjalas como están.',
+  'src.user': 'usuario',
+  'src.codex': 'Codex',
+  'src.agents': 'Compartido (.agents)',
+  'src.global': 'global',
+  'src.projects': '{n} proyecto(s)',
+  'src.elsewhere': 'proyecto u otro sitio',
+  'src.builtin': 'integrado u otro sitio',
+  'src.connector': 'plugin o conector',
+  'src.plugin': 'plugin {n}',
+  'src.project': 'proyecto {n}',
+  'src.marketplace': '{n}',
+  'note.content': 'Contenido al usarla: unos {n} tokens',
+  'note.tools': '{n} herramienta(s) usadas: {list}',
+  'note.enabled': 'activado',
+  'note.disabled': 'desactivado'
+}
+
 export type Key = keyof typeof en
-const dict: Record<Lang, typeof en> = { en, de }
+const dict: Record<Lang, typeof en> = { en, de, es }
 
 export function t(lang: Lang, key: Key, vars: Record<string, string | number> = {}): string {
   // A missing text must never break the panel: fall back to English, then to the key itself.
@@ -217,7 +314,7 @@ export function note(lang: Lang, code: string): string {
   return key in en ? t(lang, key, { n: n ?? '', list: rest.join(':') }) : code
 }
 
-export const dateLocale = (lang: Lang): string => (lang === 'de' ? 'de-DE' : 'en-US')
+export const dateLocale = (lang: Lang): string => (lang === 'de' ? 'de-DE' : lang === 'es' ? 'es-ES' : 'en-US')
 
 /** Display name of an AI as reported by a transcript, a hook or the inventory. */
 export function agentName(raw: string): string {

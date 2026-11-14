@@ -288,8 +288,8 @@ export default function Panel() {
             <Select
               label={t(l, 'language')}
               value={l}
-              options={[{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' }]}
-              onChange={(v) => set(lang, v === 'de' ? 'de' : 'en')}
+              options={[{ value: 'en', label: 'English' }, { value: 'de', label: 'Deutsch' }, { value: 'es', label: 'Español' }]}
+              onChange={(v) => set(lang, v === 'de' ? 'de' : v === 'es' ? 'es' : 'en')}
             />
             {memory.length > 0 ? <Grid columns={1} gap="sm">{memory.map((r) => <Tile2 key={r.id} r={r} l={l} />)}</Grid> : null}
             <Heading level={3}>{t(l, 'toolsByCalls')}</Heading>
