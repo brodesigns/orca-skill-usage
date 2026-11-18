@@ -72,15 +72,20 @@ test('evicts the rarest entries beyond the bucket limit', () => {
 test('translates codes in both languages', () => {
   assert.equal(source('de', 'projects:3'), '3 Projekt(e)')
   assert.equal(source('en', 'projects:3'), '3 project(s)')
+  assert.equal(source('es', 'projects:3'), '3 proyecto(s)')
   assert.equal(source('en', 'plugin:user'), 'plugin user')
   assert.equal(source('en', 'project:shop'), 'project shop')
   assert.equal(source('en', 'marketplace:a:b'), 'a:b')
   assert.equal(source('en', 'codex'), 'Codex')
   assert.equal(source('de', 'agents'), 'Gemeinsam (.agents)')
+  assert.equal(source('es', 'agents'), 'Compartido (.agents)')
   assert.equal(source('en', 'some-folder'), 'some-folder')
   assert.equal(note('en', 'tools:2:a, b'), '2 tool(s) used: a, b')
   assert.equal(note('de', 'content:12'), 'Inhalt beim Aufruf: ca. 12 Token')
   assert.equal(t('en', 'unused'), 'unused')
+  assert.equal(t('es', 'unused'), 'sin usar')
+  assert.equal(note('es', 'tools:2:a, b'), '2 herramienta(s) usadas: a, b')
+  assert.equal(t('es', 'savingsHint', { n: 3 }), 'tokens en 3 entradas sin llamar en este periodo')
 })
 
 test('names the AI behind an entry', () => {
