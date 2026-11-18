@@ -2,7 +2,7 @@
   "manifestVersion": 2,
   "id": "skill-usage",
   "name": "Skill Usage",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "See which skills, MCP servers, agents and plugins of Claude Code, Codex and Gemini you really use, per project, and what the unused ones cost in context tokens. English, German and Spanish. Local only, no tracking.",
   "engines": {
     "orca": ">=1.4.248"
@@ -54,7 +54,7 @@
     },
     {
       "path": "assets/screenshot-skills.png",
-      "alt": "Skill cards showing calls, which AIs the skill is installed for, where it exists and which projects used it",
+      "alt": "One skill card opened: folder with an Open folder button, tokens always loaded in the period, projects that used it, AIs, tokens loaded on a call",
       "caption": "Where it exists, where it is used"
     },
     {
@@ -63,19 +63,19 @@
       "caption": "One project, one period"
     },
     {
-      "path": "assets/screenshot-mcp.png",
-      "alt": "MCP server cards with the projects each server was used in",
-      "caption": "MCP servers per project"
-    },
-    {
       "path": "assets/screenshot-unused.png",
       "alt": "Only the entries that were not called in the period, sorted by token cost",
       "caption": "Find what costs but never runs"
     },
     {
+      "path": "assets/screenshot-gone.png",
+      "alt": "Entries that are not installed any more, named as built-in, from a removed plugin or from a removed project",
+      "caption": "Know what is gone"
+    },
+    {
       "path": "assets/screenshot-access.png",
-      "alt": "Four checkmarks explaining what the plugin does with the Full access label: read-only, names not secrets, no network, no actions",
-      "caption": "Why Full access? Read-only, no network, no actions"
+      "alt": "Four checkmarks explaining what the plugin does with the Full access label: read-only, names not secrets, no network, no changes",
+      "caption": "Why Full access? Read-only, no network, no changes"
     }
   ]
 }

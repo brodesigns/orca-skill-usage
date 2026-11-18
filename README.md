@@ -10,12 +10,15 @@ Every installed skill, MCP server and agent adds its description to the context 
 
 ## What you get
 
-- **Token cost at a glance:** what is loaded in every session, and how much of it was never called.
+- **Token cost at a glance:** what is loaded in every session, how much of it was never called, and what it adds up to over the chosen period (tokens × sessions). Per skill you also see what a call loads (size × calls).
 - **Where it exists, where it is used:** global or project, which projects call it, which AI uses it.
-- **Any project, any period:** latest session, 7, 30 or 90 days.
+- **Any project, any period:** latest session, 7, 30 or 90 days. The filters sit right above the list.
+- **Compact list:** one line per entry with its status next to the name, and a **Details** button for everything else. Long lists are paged, 100 entries per page, so even big inventories render.
+- **Open the folder:** every skill and agent shows where it lives, with an **Open folder** button for macOS, Windows and Linux. You decide what to delete.
+- **Knows what is gone:** entries that were used but are no longer installed are named (built-in, from a removed plugin, from a removed project) and sorted last. Orca's own skills are labeled as such.
 - **Numbers from day one:** it reads your existing session files, no waiting for data to build up.
 - **Facts only:** it never changes a file and never tells you what to delete.
-- English, German and Spanish.
+- **Three languages:** English, German and Spanish, switch in the **Other** tab.
 
 ## See it
 
@@ -23,9 +26,9 @@ Every installed skill, MCP server and agent adds its description to the context 
 
 ![Summary tiles with tokens per session, unused entries and calls](assets/screenshot-overview.png)
 
-**Where it exists, where it is used.** One card per skill, with its projects and AIs.
+**Where it exists, where it is used.** One row per skill. Open **Details** for the folder, the projects, the AIs and the tokens per session and per call.
 
-![Skill cards with calls, AIs and projects](assets/screenshot-skills.png)
+![One skill opened: folder, tokens in the period, projects and AIs](assets/screenshot-skills.png)
 
 **One project, one period.** Find what a single project really needs.
 
@@ -38,6 +41,10 @@ Every installed skill, MCP server and agent adds its description to the context 
 **Find what costs but never runs.** Unused entries, sorted by token cost.
 
 ![Unused entries sorted by token cost](assets/screenshot-unused.png)
+
+**Know what is gone.** Entries that are not installed any more, named and sorted last.
+
+![Entries that are not installed: built-in, from a removed plugin, from a removed project](assets/screenshot-gone.png)
 
 ## Install
 
@@ -53,18 +60,19 @@ From source: `git clone https://github.com/brodesigns/orca-skill-usage`, then `o
 
 Orca labels every plugin with a worker "Full access". Here is what this one does with it:
 
-![Why Full access? Read-only, names not secrets, no network, no actions](assets/screenshot-access.png)
+![Why Full access? Read-only, names not secrets, no network, no changes](assets/screenshot-access.png)
 
-- Reads your skill, agent and session files. It writes only its own counters to Orca's plugin storage.
+- Reads your skill, agent and session files. It writes only its own counters to Orca's plugin storage. It never changes or deletes a file.
 - From sessions it keeps only tool names, command names, timestamps, ids and project names. No prompts, no answers, no file contents. From MCP configs only server names, never env values or tokens.
-- No network requests. It types into no terminal and starts no agent.
+- No network requests. It types into no terminal and starts no agent. The only action is opening a folder in your file manager when you click **Open folder**.
 - It reads the workspace list only to find the folder of the focused workspace.
 
 ## Good to know
 
-- Tokens are estimates (4 characters per token). The size of an MCP server's tool list is unknown, so MCP entries show usage only.
+- Tokens are estimates (4 characters per token). "Always loaded in this period" multiplies the per-session tokens with the number of sessions in the period (every session counts, also short ones): an upper bound, and prompt caching makes the real cost lower. "Loaded on a call" assumes that every call loads the whole `SKILL.md`. The size of an MCP server's tool list is unknown, so MCP entries show usage only.
 - Claude Code is read completely. For Codex only skill reads count, for Gemini there is no usage data: such entries show "no usage data" instead of "unused".
-- "Unused" only means something with enough data for the chosen period.
+- "Unused" only means something with enough data for the chosen period. With one project picked it means unused **in that project**.
+- "Used in" lists the projects of the chosen period and appears only for all projects.
 - Slash commands you type count as usage, built-in ones such as `/model` do not.
 
 <details>
@@ -82,12 +90,14 @@ orca plugin test .
 orca plugin dev watch .
 ```
 
-Code in `src/`: `worker.ts` (hook, storage, import), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory and usage), `usage.ts`, `store.ts`, `panel.tsx` (UI), `i18n.ts` (English, German and Spanish), `protocol.ts`, `demo.ts` (made-up numbers for screenshots: set the storage key `demo` to `true`).
+Code in `src/`: `worker.ts` (hook, storage, import), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory and usage), `usage.ts`, `store.ts`, `panel.tsx` (UI), `i18n.ts` (English, German and Spanish), `protocol.ts`, `demo.ts` (made-up numbers for screenshots: set the storage key `demo` to `true`). The picture cards in `assets/` are built with `tools/build-assets.py` from panel shots (see `CLAUDE.md`).
 
 </details>
 
 ## About
 
 Built and maintained by [BroDesigns](https://brodesigns.de), a web agency.
+
+Contributions: paging for large inventories by [Ciucci01](https://github.com/Ciucci01), Spanish translation by [YuniorGlez](https://github.com/YuniorGlez).
 
 MIT license.
