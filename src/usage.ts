@@ -2,7 +2,8 @@
 /** Calls per day: [made by the model, typed by the person]. */
 export type Day = [number, number]
 /** `proj`: calls per project (short key, see `projKey`) since the first import (not pruned by day); used to spot entries that only one project needs. */
-export type Entry = { last: number; by: Record<string, number>; days: Record<string, Day>; proj?: Record<string, number> }
+/** `ag`: calls per day and AI, so "used by" follows the chosen range like the call counts do. */
+export type Entry = { last: number; by: Record<string, number>; days: Record<string, Day>; proj?: Record<string, number>; ag?: Record<string, Record<string, number>> }
 export type Bucket = Record<string, Entry>
 /** `cmds` holds slash commands the person typed; they are matched to skills when rows are built. */
 export type Stats = { skills: Bucket; mcp: Bucket; agents: Bucket; tools: Bucket; cmds: Bucket }
@@ -116,6 +117,8 @@ export function add(stats: Stats, bucket: BucketName, id: string, agent: string,
   if (who in e.by || Object.keys(e.by).length < MAX_AGENTS) e.by[who] = (e.by[who] ?? 0) + 1
   const d = (e.days[day] ??= [0, 0])
   d[mode === 'auto' ? 0 : 1] += 1
+  const dayAg = ((e.ag ??= Object.create(null) as Record<string, Record<string, number>>)[day] ??= Object.create(null) as Record<string, number>)
+  if (who in dayAg || Object.keys(dayAg).length < MAX_AGENTS) dayAg[who] = (dayAg[who] ?? 0) + 1
   if (ts > e.last) e.last = ts
   if (project !== undefined) {
     const p = (e.proj ??= Object.create(null) as Record<string, number>)
@@ -141,6 +144,7 @@ export function prune(stats: Stats, now: number): void {
   for (const name of BUCKETS) {
     for (const [id, e] of Object.entries(stats[name])) {
       for (const day of Object.keys(e.days)) if (day < oldest) delete e.days[day]
+      for (const day of Object.keys(e.ag ?? {})) if (day < oldest) delete e.ag?.[day]
       if (Object.keys(e.days).length === 0) delete stats[name][id]
     }
   }
@@ -161,6 +165,15 @@ export function countIn(e: Entry | undefined, sinceDay: string | null): { auto: 
   return { auto, direct }
 }
 
+/** Calls of one entry per AI since `sinceDay` (inclusive); null counts everything. */
+export function agentsIn(e: Entry | undefined, sinceDay: string | null): Record<string, number> {
+  const by: Record<string, number> = Object.create(null)
+  for (const [day, who] of Object.entries(e?.ag ?? {})) {
+    if (sinceDay === null || day >= sinceDay) for (const [a, n] of Object.entries(who)) by[a] = (by[a] ?? 0) + n
+  }
+  return by
+}
+
 /** Sum of two stats (history plus live counters) as a new object. */
 export function mergeStats(a: Stats, b: Stats): Stats {
   const out = emptyStats()
@@ -178,6 +191,11 @@ export function mergeStats(a: Stats, b: Stats): Stats {
           const x = (t.days[day] ??= [0, 0])
           x[0] += d[0]
           x[1] += d[1]
+        }
+        for (const [day, who] of Object.entries(e.ag ?? {})) {
+          t.ag ??= Object.create(null) as Record<string, Record<string, number>>
+          const x = (t.ag[day] ??= Object.create(null) as Record<string, number>)
+          for (const [a, n] of Object.entries(who)) x[a] = (x[a] ?? 0) + n
         }
       }
     }
@@ -209,7 +227,16 @@ export function parseStats(raw: unknown): Stats {
       if (typeof v.proj === 'object' && v.proj !== null) {
         for (const [p, n] of Object.entries(v.proj)) if (typeof n === 'number' && Number.isFinite(n) && n > 0) proj[p] = n
       }
-      out[key][id] = { last: num(v.last), by, days, ...(Object.keys(proj).length > 0 ? { proj } : {}) }
+      const ag: Record<string, Record<string, number>> = Object.create(null)
+      if (typeof v.ag === 'object' && v.ag !== null) {
+        for (const [day, who] of Object.entries(v.ag)) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || typeof who !== 'object' || who === null) continue
+          const m: Record<string, number> = Object.create(null)
+          for (const [a, n] of Object.entries(who)) if (typeof n === 'number' && Number.isFinite(n) && n > 0) m[a] = n
+          if (Object.keys(m).length > 0) ag[day] = m
+        }
+      }
+      out[key][id] = { last: num(v.last), by, days, ...(Object.keys(proj).length > 0 ? { proj } : {}), ...(Object.keys(ag).length > 0 ? { ag } : {}) }
     }
   }
   return out

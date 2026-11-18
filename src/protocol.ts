@@ -51,6 +51,8 @@ declare module 'orca' {
     byAgent: Record<string, number>
     /** Projects the entry was used in (all projects, whatever the picker shows), most calls first. */
     usedIn?: { label: string; n: number }[]
+    /** Where the entry lives on disk (folder or file); the panel can ask the worker to open it. */
+    dirs?: string[]
     /** Note code: content:N, tools:N:list, enabled, disabled. The panel translates it. */
     note?: string
   }
@@ -71,6 +73,8 @@ declare module 'orca' {
     tools: { name: string; count: number }[]
     /** Calls of all other tools in the range (the list above shows only the top ones). */
     toolCalls: number
+    /** Sessions in the chosen period and project (last activity inside it), per AI: what the always-loaded tokens are multiplied with. */
+    sessions: { claude: number; codex: number }
     /** Progress of the session import (history, project or session). */
     importing: { done: boolean; files: number; total: number }
   }

@@ -5,8 +5,8 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { basename, isAbsolute, join } from 'node:path'
 import { add, classify, dayOf, emptyStats, KEEP_DAYS, parseStats, projKey, type Stats } from './usage'
 
-/** Version of the stored format; an older one is imported again (the project attribution is new). */
-export const HISTORY_VERSION = 2
+/** Version of the stored format; an older one is imported again (the per-day AI split is new). */
+export const HISTORY_VERSION = 3
 
 export type HistoryState = {
   /** Format version, see HISTORY_VERSION. */

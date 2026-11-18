@@ -17,6 +17,10 @@ export default defineCheck({
   cards: plugin({ showTiles: false, tab: 'skill' }),
   // Only what was not called in the period.
   unused: plugin({ showTiles: false, tab: 'skill', onlyUnused: true, sortBy: 'tokens' }),
+  // The same cards with the details of one skill open: path, always-loaded and per-call tokens.
+  details: plugin({ showTiles: false, tab: 'skill', openCards: { 'skill:seo-audit': true } }),
+  // Entries that are not installed any more or that Claude Code brings itself.
+  gone: plugin({ showTiles: false, tab: 'skill', onlyGone: true, openCards: { 'skill:legacy-exporter': true } }),
   mcp: plugin({ showTiles: false, tab: 'mcp' }),
   // One project chosen: its own entries and the calls that happened there.
   project: plugin({ project: '-demo-shop-site', range: 7 }),

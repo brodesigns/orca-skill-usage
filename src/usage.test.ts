@@ -1,5 +1,5 @@
 import { assert, test } from 'orca/testing'
-import { add, classify, countIn, dayOf, emptyStats, mergeStats, parseStats, projKey, prune } from './usage'
+import { add, agentsIn, classify, countIn, dayOf, emptyStats, mergeStats, parseStats, projKey, prune } from './usage'
 import { agentName, agentNames, note, source, t } from './i18n'
 
 const NOW = Date.parse('2026-11-09T12:00:00Z')
@@ -77,11 +77,12 @@ test('translates codes in both languages', () => {
   assert.equal(source('en', 'project:shop'), 'project shop')
   assert.equal(source('en', 'marketplace:a:b'), 'a:b')
   assert.equal(source('en', 'codex'), 'Codex')
+  assert.equal(source('de', 'orca'), 'Orca (integriert)')
   assert.equal(source('de', 'agents'), 'Gemeinsam (.agents)')
   assert.equal(source('es', 'agents'), 'Compartido (.agents)')
   assert.equal(source('en', 'some-folder'), 'some-folder')
   assert.equal(note('en', 'tools:2:a, b'), '2 tool(s) used: a, b')
-  assert.equal(note('de', 'content:12'), 'Inhalt beim Aufruf: ca. 12 Token')
+  assert.equal(note('de', 'content:12', { total: '36', calls: '3' }), 'Beim Aufruf geladen: ca. 12 Token je Aufruf, 3 Aufrufe ≈ 36 Token im Zeitraum')
   assert.equal(t('en', 'unused'), 'unused')
   assert.equal(t('es', 'unused'), 'sin usar')
   assert.equal(note('es', 'tools:2:a, b'), '2 herramienta(s) usadas: a, b')
@@ -132,4 +133,13 @@ test('a missing text falls back instead of breaking', () => {
   assert.equal(t('en', 'existsGlobal').length > 0, true)
   assert.equal(t('de', 'usedInLabel').startsWith('Genutzt in'), true)
   assert.equal(t('xx' as never, 'existsGlobal').length > 0, true)
+})
+
+test('per-AI counts follow the range like the call counts', () => {
+  const s = emptyStats()
+  add(s, 'skills', 'x', 'claude', Date.parse('2026-01-01T10:00:00Z'))
+  add(s, 'skills', 'x', 'codex', Date.parse('2026-03-01T10:00:00Z'))
+  assert.deepEqual({ ...agentsIn(s.skills.x, '2026-02-01') }, { codex: 1 })
+  assert.deepEqual({ ...agentsIn(s.skills.x, null) }, { claude: 1, codex: 1 })
+  assert.deepEqual({ ...agentsIn(mergeStats(s, s).skills.x, '2026-02-01') }, { codex: 2 })
 })

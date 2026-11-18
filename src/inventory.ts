@@ -17,6 +17,8 @@ export type Item = {
   agents: string[]
   /** Other projects that hold the same project-level entry. */
   also?: string[]
+  /** Where it lives on disk (skill folder, agent file), real paths; the panel can open them. */
+  dirs?: string[]
   note?: string
 }
 
@@ -99,6 +101,7 @@ async function scanSkills(root: string, source: string, prefix: string, scope: I
       tokens: fm.manual ? 0 : estimateTokens(listed),
       manual: fm.manual,
       scope,
+      dirs: [await realpath(join(root, dir)).catch(() => join(root, dir))],
       note: `content:${estimateTokens(text.length)}`
     })
   }
@@ -121,6 +124,7 @@ async function scanAgents(root: string, source: string, prefix: string): Promise
       tokens: estimateTokens(`${name}: ${fm.description ?? ''}`.length),
       manual: false,
       scope: 'global',
+      dirs: [await realpath(join(root, file)).catch(() => join(root, file))]
     })
   }
   return out
@@ -284,6 +288,9 @@ export async function scanProjectParents(home: string = homedir()): Promise<Reco
   return out
 }
 
+// Skills that Orca installs itself (shared folder, linked into the AIs): shown as Orca's, not as the user's.
+const ORCA_SKILLS = new Set(['orchestration', 'orca-cli', 'orca-computer-use'])
+
 export async function scanInventory(home: string = homedir()): Promise<Item[]> {
   const [claudeSkills, codexSkills, sharedSkills, claudeAgents, plugins, mcp, memory, projects, otherMcp, otherMemory] = await Promise.all([
     scanSkills(join(home, '.claude', 'skills'), 'user', ''),
@@ -318,11 +325,13 @@ export async function scanInventory(home: string = homedir()): Promise<Item[]> {
     if (first === undefined) byKey.set(key, item)
     else {
       for (const a of item.agents) if (!first.agents.includes(a)) first.agents.push(a)
+      for (const d of item.dirs ?? []) if (!(first.dirs ?? []).includes(d) && (first.dirs?.length ?? 0) < 6) first.dirs = [...(first.dirs ?? []), d]
       // The same project-level entry in another project: remember where it also applies.
       if (first.scope === 'project' && item.scope === 'project' && item.source !== first.source && (first.also?.length ?? 0) < 20) {
         first.also = [...(first.also ?? []), item.source]
       }
     }
   }
+  for (const item of byKey.values()) if (item.kind === 'skill' && item.scope === 'global' && ORCA_SKILLS.has(item.id)) item.source = 'orca'
   return [...byKey.values()].slice(0, MAX_ITEMS * 3)
 }

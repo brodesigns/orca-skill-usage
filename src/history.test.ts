@@ -270,7 +270,7 @@ test('imports attribute calls to the project folder; an old stored format is imp
     assert.equal(state.stats.skills['shop-sync'].proj?.[projKey('-w-shop')], 3)
     assert.equal(state.stats.skills['shop-sync'].proj?.[projKey('-w-blog')], 1)
     assert.equal(state.stats.cmds['shop-sync'].proj?.[projKey('-w-shop')], 1)
-    assert.equal(state.v, 2)
+    assert.equal(state.v, 3)
   } finally {
     await rm(h, { recursive: true, force: true })
   }
@@ -278,14 +278,14 @@ test('imports attribute calls to the project folder; an old stored format is imp
 
 test('an old stored history is dropped but keeps its reset point; hostile data is cleaned', () => {
   const old = parseHistory({ v: 1, from: 1234, offsets: { a: 5 }, stats: {} })
-  assert.equal(old.v, 2)
+  assert.equal(old.v, 3)
   assert.equal(old.from, 1234)
   assert.deepEqual(Object.keys(old.offsets), [])
-  const ok = parseHistory({ v: 2, from: 9, offsets: { a: 5, b: 'x', c: -1 }, seen: ['abcdefghijklmnopqrst', 7], projects: { p: '/full/path/to/shop' }, stats: {} })
+  const ok = parseHistory({ v: 3, from: 9, offsets: { a: 5, b: 'x', c: -1 }, seen: ['abcdefghijklmnopqrst', 7], projects: { p: '/full/path/to/shop' }, stats: {} })
   assert.deepEqual({ ...ok.offsets }, { a: 5 })
   assert.deepEqual(ok.seen, ['ijklmnopqrst'])
   assert.equal(ok.projects.p, 'shop')
-  assert.equal(parseHistory(null).v, 2)
+  assert.equal(parseHistory(null).v, 3)
   assert.equal(parseHistory('x').from, 0)
 })
 

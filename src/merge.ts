@@ -1,6 +1,6 @@
 // Joins the inventory and the usage counts into panel rows (pure, testable).
 import type { Item } from './inventory'
-import { countIn, type Entry, type Stats } from './usage'
+import { agentsIn, countIn, type Entry, type Stats } from './usage'
 
 export type Row = {
   kind: Item['kind']
@@ -35,6 +35,20 @@ export function isTracked(it: Pick<Item, 'kind' | 'agents'>): boolean {
   return it.kind === 'skill' && (it.agents.includes('codex') || it.agents.includes('agents'))
 }
 
+/** Skills and agents Claude Code brings itself (no folder in the inventory). */
+const CLAUDE_SKILLS = new Set(['init', 'review', 'security-review', 'simplify', 'loop', 'schedule', 'claude-api', 'fewer-permission-prompts', 'update-config', 'keybindings-help', 'run', 'code-review', 'plugin-authoring'])
+const CLAUDE_AGENTS = new Set(['general-purpose', 'Explore', 'Plan', 'fork', 'claude-code-guide', 'statusline-setup', 'claude'])
+
+/** What a skill that was used but not found in the inventory most likely is. */
+export function goneSkillSource(id: string, byAgent: Record<string, number>): string {
+  if (CLAUDE_SKILLS.has(id)) return 'claudeBuiltin'
+  const [prefix, ...rest] = id.split(':')
+  if (rest.length > 0 && prefix !== '') return `removedplugin:${prefix.slice(0, 60)}`
+  const who = Object.keys(byAgent)
+  if (who.length > 0 && who.every((a) => a === 'codex')) return 'removedcodex'
+  return 'removed'
+}
+
 /** Claude Code normalizes MCP names (hyphens become underscores). */
 export const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '_')
 
@@ -49,7 +63,7 @@ function use(entries: { e: Entry | undefined; since: string | null }[]): Use {
     out.auto += c.auto
     out.direct += c.direct
     out.last = Math.max(out.last ?? 0, e.last)
-    for (const [a, n] of Object.entries(e.by)) out.byAgent[a] = (out.byAgent[a] ?? 0) + n
+    for (const [a, n] of Object.entries(agentsIn(e, since))) out.byAgent[a] = (out.byAgent[a] ?? 0) + n
     for (const [p, n] of Object.entries(e.proj ?? {})) out.proj[p] = (out.proj[p] ?? 0) + n
   }
   return out
@@ -116,10 +130,10 @@ export function mergeRows(items: Item[], stats: Stats, since: string | null = nu
     if (u.auto + u.direct > 0) rows.push({ kind, id, label: id, source, scope: 'global', agents: [], tracked: true, tokens: null, manual: false, installed: false, ...plain(u) })
   }
   for (const [id, e] of Object.entries(stats.skills)) {
-    if (!claimed.skills.has(id)) orphan('skill', id, 'elsewhere', use([{ e, since }, { e: claimed.cmds.has(id) ? undefined : stats.cmds[id], since }]))
+    if (!claimed.skills.has(id)) orphan('skill', id, goneSkillSource(id, e.by), use([{ e, since }, { e: claimed.cmds.has(id) ? undefined : stats.cmds[id], since }]))
   }
   for (const [id, e] of Object.entries(stats.agents)) {
-    if (!claimed.agents.has(id)) orphan('agent', id, 'builtin', use([{ e, since }]))
+    if (!claimed.agents.has(id)) orphan('agent', id, CLAUDE_AGENTS.has(id) ? 'claudeBuiltin' : 'removed', use([{ e, since }]))
   }
   const servers = new Map<string, { e: Entry; since: string | null }[]>()
   for (const [id, e] of Object.entries(stats.mcp)) {

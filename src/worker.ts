@@ -1,6 +1,8 @@
 // Counts agent calls (skills, MCP, subagents, tools), imports past sessions and compares both with the inventory.
 import type { Snapshot, View } from 'orca'
-import { basename } from 'node:path'
+import { spawn } from 'node:child_process'
+import { basename, dirname, sep } from 'node:path'
+import { realpathSync, statSync } from 'node:fs'
 import type { OrcaWorkerApi } from 'orca/worker'
 import { homedir } from 'node:os'
 import { emptyHistory, importHistory, listProjects, listSessionFiles, parseHistory, pickSession, type FileRef, type HistoryState, type Progress } from './history'
@@ -25,6 +27,19 @@ function normalizeView(raw: unknown): View {
 
 /** The home folder to read. `SKILL_USAGE_HOME` exists for tests only. */
 const homeDir = (): string => process.env.SKILL_USAGE_HOME ?? homedir()
+// The panel sees paths with the home folder as `~`, so no user name leaves the worker.
+const realHome = (): string => {
+  try {
+    return realpathSync(homeDir())
+  } catch {
+    return homeDir()
+  }
+}
+const short = (p: string): string => {
+  // Paths in the inventory are real paths, so a home folder behind a link (macOS /var) must match too.
+  for (const h of [homeDir(), realHome()]) if (p === h || p.startsWith(h + sep)) return `~${p.slice(h.length)}`
+  return p
+}
 
 export default function activate(orca: OrcaWorkerApi): void {
   // All writes run one after another, otherwise parallel calls would be lost (reset included).
@@ -248,15 +263,23 @@ export default function activate(orca: OrcaWorkerApi): void {
     const tools = counted.slice(0, 12)
     // The total covers every tool, not just the twelve shown.
     const toolCalls = counted.reduce((n, t) => n + t.count, 0)
+    // Sessions in the period: the always-loaded tokens are paid in each of them. A session counts by its last activity.
+    // Codex rollouts belong to no project, so with a project picked only Claude sessions are counted.
+    const cutoff = since === null ? 0 : Date.parse(`${since}T00:00:00Z`)
+    const inPeriod = all.filter((f) => !f.sub && f.mtime >= cutoff && (project === null || (f.agent === 'claude' && f.dir === project.slug)))
+    const sessions = range === 0 ? { claude: sessionFile === null ? 0 : 1, codex: 0 } : { claude: inPeriod.filter((f) => f.agent === 'claude').length, codex: inPeriod.filter((f) => f.agent === 'codex').length }
     const rowsOut = mergeRows(shown, stats, since)
-    // Where an entry was used: all projects, whatever period or project the pickers show.
+    // Where an entry was used: all projects, in the chosen period, and only while the numbers cover all projects (so it never contradicts the badge). A project or a single session has no such list.
     const everywhere = mergeStats(hist?.stats ?? emptyStats(), live ?? emptyStats())
-    const wherever = new Map(mergeRows(shown, everywhere, dayOf(Date.now() - 89 * DAY)).map((r) => [`${r.kind}:${r.id}`, r]))
+    const wherever = new Map(range === 0 || project !== null ? [] : mergeRows(shown, everywhere, since).map((r) => [`${r.kind}:${r.id}`, r]))
     const projectByKey = new Map(projects.map((p) => [projKey(p.slug), p.label]))
     for (const r of rowsOut) {
       const keys = wherever.get(`${r.kind}:${r.id}`)?.usedInKeys ?? []
       const usedIn = keys.flatMap(([key, n]) => (projectByKey.has(key) ? [{ label: projectByKey.get(key) as string, n }] : []))
       if (usedIn.length > 0) r.usedIn = usedIn
+      // A skill that is gone but was used in exactly one project most likely belonged to that project.
+      if (!r.installed && r.kind === 'skill' && r.source === 'removed' && usedIn.length === 1) r.source = `removedproject:${usedIn[0].label}`
+      if (r.dirs !== undefined) r.dirs = r.dirs.map(short)
       delete r.usedInKeys
     }
     const out = {
@@ -269,6 +292,7 @@ export default function activate(orca: OrcaWorkerApi): void {
       rows: rowsOut,
       tools,
       toolCalls,
+      sessions,
       importing
     }
     // The JSON round trip drops `undefined`, which the host API rejects in an answer.
@@ -323,6 +347,22 @@ export default function activate(orca: OrcaWorkerApi): void {
     // Read new session lines in the background (first look, or when the last import is a minute old).
     if (!importing && Date.now() - lastImport > 60_000) scheduleImport(200)
     return snapshot(normalizeView(view))
+  })
+  // Opens a folder of the inventory in the system's file manager. Only paths the scan found are accepted.
+  orca.panels.handle('folder.open', (input: { path?: unknown }) => {
+    const wanted = typeof input?.path === 'string' ? input.path : ''
+    const path = items.flatMap((i) => i.dirs ?? []).find((d) => short(d) === wanted)
+    if (path === undefined) return { opened: false }
+    const dir = statSync(path, { throwIfNoEntry: false })?.isDirectory() ? path : dirname(path)
+    const [cmd, args] = process.platform === 'darwin' ? ['open', [dir]] : process.platform === 'win32' ? ['explorer.exe', [dir]] : ['xdg-open', [dir]]
+    try {
+      const child = spawn(cmd, args, { stdio: 'ignore', detached: true })
+      child.on('error', () => undefined)
+      child.unref()
+      return { opened: true }
+    } catch {
+      return { opened: false }
+    }
   })
   orca.panels.handle('inventory.scan', (view) => {
     scheduleImport(200)

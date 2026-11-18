@@ -1,5 +1,5 @@
 import { assert, test } from 'orca/testing'
-import { isTracked, mergeRows } from './merge'
+import { isTracked, mergeRows, goneSkillSource } from './merge'
 import type { Item } from './inventory'
 import { add, dayOf, emptyStats, projKey } from './usage'
 
@@ -66,4 +66,11 @@ test('rows list the projects their calls came from, most calls first, as short k
   assert.deepEqual(row.usedInKeys, [[projKey('shop'), 9], [projKey('blog'), 2]])
   assert.equal('proj' in row, false)
   assert.equal(mergeRows([item('skill', 'unused')], st)[0].usedInKeys, undefined)
+})
+
+test('names what a used but missing skill most likely is', () => {
+  assert.equal(goneSkillSource('init', { claude: 3 }), 'claudeBuiltin')
+  assert.equal(goneSkillSource('anthropic-skills:humanizer', { claude: 1 }), 'removedplugin:anthropic-skills')
+  assert.equal(goneSkillSource('landers-category-image', { codex: 15 }), 'removedcodex')
+  assert.equal(goneSkillSource('repo-analyst', { claude: 10 }), 'removed')
 })

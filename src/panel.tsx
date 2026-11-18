@@ -5,6 +5,7 @@ import { agentName, agentNames, dateLocale, note, source, t, type Key, type Lang
 const snap = atom<Snapshot | null>(null)
 const tab = atom('tab', 'skill', { persist: 'plugin' })
 const onlyUnused = atom('onlyUnused', false, { persist: 'plugin' })
+const onlyGone = atom('onlyGone', false, { persist: 'plugin' })
 const lang = atom<Lang>('lang', 'en', { persist: 'plugin' })
 const range = atom('range', 30, { persist: 'plugin' })
 const project = atom('project', 'all', { persist: 'plugin' })
@@ -16,7 +17,7 @@ const failed = atom('failed', false)
 const showTiles = atom('showTiles', true, { persist: 'plugin' })
 // The page of a list; another tab, filter, search or sort starts again at the first page.
 // Cards with open details, by kind:id.
-const openCards = atom<Record<string, boolean>>('openCards', {})
+const openCards = atom<Record<string, boolean>>('openCards', {}, { persist: 'plugin' })
 const page = atom<{ key: string; n: number }>('page', { key: '', n: 0 })
 
 const view = (): View => ({ range: read(range), scope: read(project) })
@@ -41,6 +42,9 @@ const MAX_CARDS = 100
 
 const fmt = (n: number, l: Lang): string => n.toLocaleString(dateLocale(l))
 const calls = (r: Row): number => r.auto + r.direct
+const isTail = (r: Row): boolean => !r.installed || r.source === 'claudeBuiltin'
+// Used, but no longer in the inventory: removed or moved (not the built-in and connector entries).
+const isGone = (r: Row): boolean => !r.installed && r.source.startsWith('removed')
 
 /** Unused = installed but never called in the period (only where usage data exists). */
 const isUnused = (r: Row): boolean => r.installed && r.tracked && r.kind !== 'memory' && calls(r) === 0
@@ -86,11 +90,27 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
   for (const [a, c] of Object.entries(r.byAgent)) used[agentName(a)] = (used[agentName(a)] ?? 0) + c
   const usedBy = Object.entries(used).map(([a, c]) => `${a} ${c}×`).join(', ')
   const installed = agentNames(r.agents)
-  const tokens = r.tokens === null ? t(l, 'tokensUnknown') : t(l, 'tokens', { n: fmt(r.tokens, l) })
+  // Without a file there is nothing to measure; an MCP server's cost depends on its tools.
+  const tokens = r.tokens !== null ? t(l, 'tokens', { n: fmt(r.tokens, l) }) : !r.installed ? '' : r.kind === 'mcp' ? t(l, 'tokensMcp') : t(l, 'tokensUnknown')
   const parts = [source(l, r.source), tokens, r.manual ? t(l, 'manualOnly') : ''].filter(Boolean)
   const usedIn = usedInText(r, l)
+  // The full text of a skill is loaded on each call: it costs something only in a period with calls (then calls x size).
+  const content = r.note?.startsWith('content:') ? Number(r.note.slice(8)) : null
+  const noteText = r.note === undefined ? '' : content === null ? note(l, r.note) : n > 0 && Number.isFinite(content) ? note(l, r.note, { total: fmt(content * n, l), calls: fmt(n, l) }) : ''
+  // Name and description sit in every session of the AIs the entry is installed for: tokens x sessions in the period.
+  const ss = read(snap)?.sessions ?? { claude: 0, codex: 0 }
+  const sessionsOf = (r.agents.includes('claude') ? ss.claude : 0) + (r.agents.some((a) => a === 'codex' || a === 'agents') ? ss.codex : 0)
+  const alwaysText = r.installed && r.scope === 'global' && r.kind !== 'plugin' && r.tokens !== null && r.tokens > 0 && sessionsOf > 0
+    ? t(l, 'alwaysInPeriod', { n: fmt(r.tokens, l), sessions: fmt(sessionsOf, l), total: fmt(r.tokens * sessionsOf, l) })
+    : ''
   const open = read(openCards)[`${r.kind}:${r.id}`] === true
-  const toggle = () => set(openCards, { ...read(openCards), [`${r.kind}:${r.id}`]: !open })
+  // Only open cards are kept, so the stored value stays small.
+  const toggle = () => {
+    const next = { ...read(openCards) }
+    if (open) delete next[`${r.kind}:${r.id}`]
+    else next[`${r.kind}:${r.id}`] = true
+    set(openCards, next)
+  }
   return (
     <Stack gap="xs">
       <Stack gap="xs">
@@ -116,6 +136,14 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
               </Line>
             ) : null}
             {r.installed ? <Text muted size="xs">{`${t(l, 'existsIn')}: ${existsText(r, l)}`}</Text> : null}
+            {(r.dirs ?? []).map((d) => (
+              <Line key={d} justify="between" align="center" gap="xs">
+                <Text muted size="xs" truncate>{d}</Text>
+                <Button variant="ghost" size="sm" icon="folder" onPress={() => void plugin.request('folder.open', { path: d })}>{t(l, 'openFolder')}</Button>
+              </Line>
+            ))}
+            {isGone(r) ? <Text muted size="xs">{t(l, 'goneHint')}</Text> : null}
+            {alwaysText !== '' ? <Text muted size="xs">{alwaysText}</Text> : null}
             {usedIn !== '' ? <Text muted size="xs">{`${t(l, 'usedInLabel')}: ${usedIn}`}</Text> : null}
             {installed.length > 0 ? (
               <Line gap="xs" wrap>
@@ -124,7 +152,7 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
               </Line>
             ) : null}
             {usedBy !== '' ? <Text muted size="xs">{`${t(l, 'usedBy')}: ${usedBy}`}</Text> : null}
-            {r.note ? <Text muted size="xs">{note(l, r.note)}</Text> : null}
+            {noteText !== '' ? <Text muted size="xs">{noteText}</Text> : null}
           </Stack>
         ) : null}
       </Stack>
@@ -135,15 +163,17 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
 
 function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
   const only = read(onlyUnused)
+  const gone = read(onlyGone)
   const q = read(query).trim().toLowerCase()
   const scope = read(scopeBy)
   const sort = SORTS[read(sortBy)] ?? SORTS.usage
   const agent = read(agentSel)
   const hasAgent = (r: Row): boolean => agent === 'all' || agentNames([...r.agents, ...Object.keys(r.byAgent)]).includes(agent)
   const shown = rows
-    .filter((r) => hasAgent(r) && (!only || isUnused(r)) && (scope === 'all' || r.scope === scope) && (q === '' || r.label.toLowerCase().includes(q)))
-    .sort((a, b) => sort(a, b) || a.label.localeCompare(b.label))
-  const key = [read(tab), q, scope, read(sortBy), only, agent].join('|')
+    .filter((r) => hasAgent(r) && (!only || isUnused(r)) && (!gone || !r.installed) && (scope === 'all' || r.scope === scope) && (q === '' || r.label.toLowerCase().includes(q)))
+    // Entries that are not installed and the ones Claude Code brings itself come last, whatever the sort.
+    .sort((a, b) => Number(isTail(a)) - Number(isTail(b)) || sort(a, b) || a.label.localeCompare(b.label))
+  const key = [read(tab), q, scope, read(sortBy), only, gone, agent].join('|')
   const pages = Math.ceil(shown.length / MAX_CARDS)
   const p = read(page).key === key ? Math.min(read(page).n, pages - 1) : 0
   const go = (n: number) => () => set(page, { key, n })
@@ -172,6 +202,7 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
         />
       </Grid>
       <Switch label={t(l, 'onlyUnused')} checked={only} onChange={(v) => set(onlyUnused, v)} />
+      <Switch label={t(l, 'onlyGone')} checked={gone} onChange={(v) => set(onlyGone, v)} />
       {pager}
       {shown.length === 0 ? <EmptyState title={t(l, empty)} /> : (
         <Grid columns={1} gap="sm">
@@ -241,44 +272,6 @@ export default function Panel() {
         </Button>
       </Line>
 
-      <Grid columns={2} gap="sm">
-        <Select
-          label={t(l, 'projectSel')}
-          // A session always belongs to one project, so "all projects" is not offered then.
-          value={read(range) === 0 && read(project) === 'all' ? 'current' : read(project)}
-          options={[
-            ...(read(range) === 0 ? [] : [{ value: 'all', label: t(l, 'scopeAll') }]),
-            { value: 'current', label: t(l, 'scopeCurrent', { name: s.current?.label ?? '–' }) },
-            ...s.projects.map((p) => ({ value: p.slug, label: p.label }))
-          ]}
-          onChange={(v) => {
-            set(project, v)
-            load()
-          }}
-        />
-        <Select
-          label={t(l, 'range')}
-          value={String(read(range))}
-          options={[0, 7, 30, 90].map((d) => ({ value: String(d), label: t(l, `range.${d}` as Key) }))}
-          onChange={(v) => {
-            set(range, Number(v))
-            load()
-          }}
-        />
-      </Grid>
-      <Select
-        label={t(l, 'agentFilter')}
-        value={read(agentSel)}
-        options={[{ value: 'all', label: t(l, 'allAgents') }, ...ais.map((a) => ({ value: a, label: a }))]}
-        onChange={(v) => set(agentSel, v)}
-      />
-      {s.session !== null && s.project !== null ? (
-        <Line gap="xs" wrap>
-          <Text muted size="xs">{t(l, 'sessionInfo', { name: s.project.label })}</Text>
-          <RelativeTime at={s.session.last} />
-        </Line>
-      ) : null}
-
       {!s.importing.done ? (
         <Callout tone="neutral" title={t(l, 'importingTitle')}>
           <Stack gap="xs">
@@ -300,6 +293,44 @@ export default function Panel() {
       ) : null}
 
       <InfoBox l={l} />
+
+      <Select
+        label={t(l, 'projectSel')}
+        // A session always belongs to one project, so "all projects" is not offered then.
+        value={read(range) === 0 && read(project) === 'all' ? 'current' : read(project)}
+        options={[
+          ...(read(range) === 0 ? [] : [{ value: 'all', label: t(l, 'scopeAll') }]),
+          { value: 'current', label: t(l, 'scopeCurrent', { name: s.current?.label ?? '–' }) },
+          ...s.projects.map((p) => ({ value: p.slug, label: p.label }))
+        ]}
+        onChange={(v) => {
+          set(project, v)
+          load()
+        }}
+      />
+      <Grid columns={2} gap="sm">
+        <Select
+          label={t(l, 'range')}
+          value={String(read(range))}
+          options={[0, 7, 30, 90].map((d) => ({ value: String(d), label: t(l, `range.${d}` as Key) }))}
+          onChange={(v) => {
+            set(range, Number(v))
+            load()
+          }}
+        />
+        <Select
+          label={t(l, 'agentFilter')}
+          value={read(agentSel)}
+          options={[{ value: 'all', label: t(l, 'allAgents') }, ...ais.map((a) => ({ value: a, label: a }))]}
+          onChange={(v) => set(agentSel, v)}
+        />
+      </Grid>
+      {s.session !== null && s.project !== null ? (
+        <Line gap="xs" wrap>
+          <Text muted size="xs">{t(l, 'sessionInfo', { name: s.project.label })}</Text>
+          <RelativeTime at={s.session.last} />
+        </Line>
+      ) : null}
 
       <Tabs label={t(l, 'area')} value={read(tab)} onChange={(v) => set(tab, v)}>
         <Tab value="skill" label={`${t(l, 'skills')} ${skills.length}`}>

@@ -18,13 +18,17 @@ export function demoSnapshot(view: View): Snapshot {
     { slug: '-demo-newsletter', label: 'newsletter' }
   ]
   const rows: Row[] = [
-    row({ kind: 'skill', id: 'seo-audit', tokens: 96, auto: 24, direct: 3, byAgent: { claude: 27 }, usedIn: [{ label: 'shop-site', n: 41 }, { label: 'docs-portal', n: 9 }], agents: ['claude', 'codex'], note: 'content:1420' }),
-    row({ kind: 'skill', id: 'pdf-export', tokens: 81, auto: 11, direct: 0, byAgent: { claude: 8, codex: 3 }, usedIn: [{ label: 'docs-portal', n: 36 }], agents: ['claude', 'codex'], note: 'content:880' }),
-    row({ kind: 'skill', id: 'release-notes', tokens: 74, auto: 6, direct: 2, byAgent: { claude: 8 }, usedIn: [{ label: 'newsletter', n: 12 }, { label: 'shop-site', n: 3 }], note: 'content:640' }),
-    row({ kind: 'skill', id: 'image-resize', tokens: 62, auto: 0, direct: 0, usedIn: [{ label: 'shop-site', n: 4 }], note: 'content:520' }),
-    row({ kind: 'skill', id: 'data-migration', tokens: 88, auto: 0, direct: 0, note: 'content:1210' }),
+    row({ kind: 'skill', id: 'seo-audit', tokens: 96, auto: 24, direct: 3, dirs: ['~/.claude/skills/seo-audit', '~/.codex/skills/seo-audit'], byAgent: { claude: 27 }, usedIn: [{ label: 'shop-site', n: 41 }, { label: 'docs-portal', n: 9 }], agents: ['claude', 'codex'], note: 'content:1420' }),
+    row({ kind: 'skill', id: 'pdf-export', tokens: 81, auto: 11, direct: 0, dirs: ['~/.claude/skills/pdf-export'], byAgent: { claude: 8, codex: 3 }, usedIn: [{ label: 'docs-portal', n: 36 }], agents: ['claude', 'codex'], note: 'content:880' }),
+    row({ kind: 'skill', id: 'release-notes', tokens: 74, auto: 6, direct: 2, dirs: ['~/.claude/skills/release-notes'], byAgent: { claude: 8 }, usedIn: [{ label: 'newsletter', n: 12 }, { label: 'shop-site', n: 3 }], note: 'content:640' }),
+    row({ kind: 'skill', id: 'image-resize', tokens: 62, auto: 0, direct: 0, dirs: ['~/.claude/skills/image-resize'], usedIn: [{ label: 'shop-site', n: 4 }], note: 'content:520' }),
+    row({ kind: 'skill', id: 'data-migration', tokens: 88, auto: 0, direct: 0, dirs: ['~/.claude/skills/data-migration'], note: 'content:1210' }),
     row({ kind: 'skill', id: 'quarterly-report', tokens: 0, manual: true, auto: 0, direct: 0, note: 'content:700' }),
     row({ kind: 'skill', id: 'invoice-helper', tokens: 70, scope: 'project', source: 'project:shop-site', auto: 7, direct: 0, byAgent: { claude: 7 }, usedIn: [{ label: 'shop-site', n: 7 }], note: 'content:560' }),
+    row({ kind: 'skill', id: 'orchestration', source: 'orca', tokens: 217, auto: 6, direct: 0, byAgent: { claude: 6 }, agents: ['claude', 'agents'], dirs: ['~/.agents/skills/orchestration'], note: 'content:3100' }),
+    row({ kind: 'skill', id: 'init', source: 'claudeBuiltin', installed: false, agents: [], tokens: null, auto: 12, direct: 0, byAgent: { claude: 12 } }),
+    row({ kind: 'skill', id: 'ui-kit:button-audit', source: 'removedplugin:ui-kit', installed: false, agents: [], tokens: null, auto: 3, direct: 0, byAgent: { claude: 3 }, usedIn: [{ label: 'shop-site', n: 3 }] }),
+    row({ kind: 'skill', id: 'legacy-exporter', source: 'removedproject:docs-portal', installed: false, agents: [], tokens: null, auto: 2, direct: 0, byAgent: { claude: 2 }, usedIn: [{ label: 'docs-portal', n: 2 }] }),
     row({ kind: 'mcp', id: 'docs-server', tokens: null, auto: 15, direct: 0, source: 'global', byAgent: { claude: 15 }, usedIn: [{ label: 'docs-portal', n: 58 }, { label: 'newsletter', n: 4 }], note: 'tools:2:search, fetch' }),
     row({ kind: 'mcp', id: 'ticket-tracker', tokens: null, auto: 0, direct: 0, source: 'global' }),
     row({ kind: 'mcp', id: 'cms-connector', tokens: null, scope: 'project', source: 'project:shop-site', auto: 9, direct: 0, byAgent: { claude: 9 }, usedIn: [{ label: 'shop-site', n: 33 }] }),
@@ -61,6 +65,7 @@ export function demoSnapshot(view: View): Snapshot {
       { name: 'Write', count: 120 }
     ].map((x) => ({ ...x, count: chosen === null ? x.count : Math.round(x.count * 0.35) })),
     toolCalls: chosen === null ? 4220 : 1480,
+    sessions: { claude: chosen === null ? 120 : 40, codex: chosen === null ? 30 : 0 },
     importing: { done: true, files: 1, total: 1 }
   }
 }
