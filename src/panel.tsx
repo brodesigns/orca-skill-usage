@@ -1,4 +1,4 @@
-import { atom, Badge, Button, Callout, Card, Collapsible, EmptyState, Grid, Heading, Input, plugin, Progress, read, RelativeTime, Row as Line, Select, set, Stack, Switch, Tab, Tabs, Text, type PanelContext } from 'orca'
+import { atom, Badge, Button, Callout, Card, Collapsible, EmptyState, Grid, Heading, Input, plugin, Progress, read, RelativeTime, Row as Line, Select, Separator, set, Stack, Switch, Tab, Tabs, Text, type PanelContext } from 'orca'
 import { totalCalls } from './totals'
 import { agentName, agentNames, dateLocale, note, source, t, type Key, type Lang } from './i18n'
 
@@ -15,6 +15,8 @@ const query = atom('query', '')
 const failed = atom('failed', false)
 const showTiles = atom('showTiles', true, { persist: 'plugin' })
 // The page of a list; another tab, filter, search or sort starts again at the first page.
+// Cards with open details, by kind:id.
+const openCards = atom<Record<string, boolean>>('openCards', {})
 const page = atom<{ key: string; n: number }>('page', { key: '', n: 0 })
 
 const view = (): View => ({ range: read(range), scope: read(project) })
@@ -87,35 +89,47 @@ function Tile2({ r, l }: { r: Row; l: Lang }) {
   const tokens = r.tokens === null ? t(l, 'tokensUnknown') : t(l, 'tokens', { n: fmt(r.tokens, l) })
   const parts = [source(l, r.source), tokens, r.manual ? t(l, 'manualOnly') : ''].filter(Boolean)
   const usedIn = usedInText(r, l)
+  const open = read(openCards)[`${r.kind}:${r.id}`] === true
+  const toggle = () => set(openCards, { ...read(openCards), [`${r.kind}:${r.id}`]: !open })
   return (
-    <Card title={r.label} description={parts.join(' · ')}>
+    <Stack gap="xs">
       <Stack gap="xs">
-        <Line gap="xs" wrap>
-          <Badge tone={unused ? 'warning' : n > 0 ? 'success' : 'neutral'}>
-            {n > 0 ? t(l, 'usedTimes', { n: fmt(n, l) }) : r.kind === 'memory' ? t(l, 'alwaysBadge') : r.installed ? (r.tracked ? t(l, 'unused') : t(l, 'noData')) : t(l, 'notInstalled')}
-          </Badge>
-          {r.manual ? <Badge>{t(l, 'freeBadge')}</Badge> : null}
-          {!r.installed ? <Badge>{t(l, 'usageOnly')}</Badge> : null}
+        <Line justify="between" align="center" gap="xs">
+          <Line gap="xs" align="center" wrap>
+            <Text weight="semibold">{r.label}</Text>
+            <Badge tone={unused ? 'warning' : n > 0 ? 'success' : 'neutral'}>
+              {n > 0 ? t(l, 'usedTimes', { n: fmt(n, l) }) : r.kind === 'memory' ? t(l, 'alwaysBadge') : r.installed ? (r.tracked ? t(l, 'unused') : t(l, 'noData')) : t(l, 'notInstalled')}
+            </Badge>
+            {r.manual ? <Badge>{t(l, 'freeBadge')}</Badge> : null}
+            {!r.installed ? <Badge>{t(l, 'usageOnly')}</Badge> : null}
+          </Line>
+          <Button variant="ghost" size="sm" onPress={toggle}>{`${t(l, 'details')} ${open ? '▴' : '▾'}`}</Button>
         </Line>
+        <Text muted size="xs">{parts.join(' · ')}</Text>
         {r.direct > 0 ? <Text muted size="xs">{t(l, 'split', { a: fmt(r.auto, l), d: fmt(r.direct, l) })}</Text> : null}
-        {r.last !== null ? (
-          <Line gap="xs">
-            <Text muted size="xs">{t(l, 'lastUsed')}</Text>
-            <RelativeTime at={r.last} />
-          </Line>
+        {open ? (
+          <Stack gap="xs">
+            {r.last !== null ? (
+              <Line gap="xs">
+                <Text muted size="xs">{t(l, 'lastUsed')}</Text>
+                <RelativeTime at={r.last} />
+              </Line>
+            ) : null}
+            {r.installed ? <Text muted size="xs">{`${t(l, 'existsIn')}: ${existsText(r, l)}`}</Text> : null}
+            {usedIn !== '' ? <Text muted size="xs">{`${t(l, 'usedInLabel')}: ${usedIn}`}</Text> : null}
+            {installed.length > 0 ? (
+              <Line gap="xs" wrap>
+                <Text muted size="xs">{t(l, 'installedFor')}</Text>
+                {installed.map((a) => <Badge key={a}>{a}</Badge>)}
+              </Line>
+            ) : null}
+            {usedBy !== '' ? <Text muted size="xs">{`${t(l, 'usedBy')}: ${usedBy}`}</Text> : null}
+            {r.note ? <Text muted size="xs">{note(l, r.note)}</Text> : null}
+          </Stack>
         ) : null}
-        {r.installed ? <Text muted size="xs">{`${t(l, 'existsIn')}: ${existsText(r, l)}`}</Text> : null}
-        {usedIn !== '' ? <Text muted size="xs">{`${t(l, 'usedInLabel')}: ${usedIn}`}</Text> : null}
-        {installed.length > 0 ? (
-          <Line gap="xs" wrap>
-            <Text muted size="xs">{t(l, 'installedFor')}</Text>
-            {installed.map((a) => <Badge key={a}>{a}</Badge>)}
-          </Line>
-        ) : null}
-        {usedBy !== '' ? <Text muted size="xs">{`${t(l, 'usedBy')}: ${usedBy}`}</Text> : null}
-        {r.note ? <Text muted size="xs">{note(l, r.note)}</Text> : null}
       </Stack>
-    </Card>
+      <Separator />
+    </Stack>
   )
 }
 

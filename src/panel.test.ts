@@ -13,12 +13,12 @@ test('a long list is paged, and another sort starts again at the first page', as
   })
   const next = () => p.findAll({ type: 'Button', text: 'Next' })[0]
   assert.ok(p.find({ text: '1–100 of 250' }))
-  assert.equal(p.findAll({ type: 'Card' }).length, 100)
+  assert.equal(p.findAll({ type: 'Separator' }).length, 100)
 
   await p.press(next())
   await p.press(next())
   assert.ok(p.find({ text: '201–250 of 250' }))
-  assert.equal(p.findAll({ type: 'Card' }).length, 50)
+  assert.equal(p.findAll({ type: 'Separator' }).length, 50)
 
   await p.select({ label: 'Sort by' }, 'tokens')
   assert.ok(p.find({ text: '1–100 of 250' }))
