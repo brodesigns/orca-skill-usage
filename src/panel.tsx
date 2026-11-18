@@ -14,6 +14,8 @@ const agentSel = atom('agentSel', 'all', { persist: 'plugin' })
 const query = atom('query', '')
 const failed = atom('failed', false)
 const showTiles = atom('showTiles', true, { persist: 'plugin' })
+// The page of a list; another tab, filter, search or sort starts again at the first page.
+const page = atom<{ key: string; n: number }>('page', { key: '', n: 0 })
 
 const view = (): View => ({ range: read(range), scope: read(project) })
 
@@ -31,6 +33,9 @@ export function setup(ctx: PanelContext): void {
   ctx.subscriptions.push(plugin.on('usage.changed', load))
   load()
 }
+
+// Orca refuses a whole render past 5000 nodes and the fullest card takes about 26, so a page draws at most this many.
+const MAX_CARDS = 100
 
 const fmt = (n: number, l: Lang): string => n.toLocaleString(dateLocale(l))
 const calls = (r: Row): number => r.auto + r.direct
@@ -124,6 +129,17 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
   const shown = rows
     .filter((r) => hasAgent(r) && (!only || isUnused(r)) && (scope === 'all' || r.scope === scope) && (q === '' || r.label.toLowerCase().includes(q)))
     .sort((a, b) => sort(a, b) || a.label.localeCompare(b.label))
+  const key = [read(tab), q, scope, read(sortBy), only, agent].join('|')
+  const pages = Math.ceil(shown.length / MAX_CARDS)
+  const p = read(page).key === key ? Math.min(read(page).n, pages - 1) : 0
+  const go = (n: number) => () => set(page, { key, n })
+  const pager = pages > 1 ? (
+    <Line justify="between">
+      <Button variant="ghost" size="sm" disabled={p === 0} onPress={go(p - 1)}>{t(l, 'prev')}</Button>
+      <Text muted size="xs">{t(l, 'pageRange', { from: fmt(p * MAX_CARDS + 1, l), to: fmt(Math.min((p + 1) * MAX_CARDS, shown.length), l), total: fmt(shown.length, l) })}</Text>
+      <Button variant="ghost" size="sm" disabled={p === pages - 1} onPress={go(p + 1)}>{t(l, 'next')}</Button>
+    </Line>
+  ) : null
   return (
     <Stack gap="md">
       <Input label={t(l, 'search')} labelHidden type="search" placeholder={t(l, 'searchPlaceholder')} value={read(query)} onChange={(v) => set(query, v)} maxLength={80} />
@@ -142,11 +158,13 @@ function List({ rows, empty, l }: { rows: Row[]; empty: Key; l: Lang }) {
         />
       </Grid>
       <Switch label={t(l, 'onlyUnused')} checked={only} onChange={(v) => set(onlyUnused, v)} />
+      {pager}
       {shown.length === 0 ? <EmptyState title={t(l, empty)} /> : (
         <Grid columns={1} gap="sm">
-          {shown.map((r) => <Tile2 key={`${r.kind}:${r.id}`} r={r} l={l} />)}
+          {shown.slice(p * MAX_CARDS, (p + 1) * MAX_CARDS).map((r) => <Tile2 key={`${r.kind}:${r.id}`} r={r} l={l} />)}
         </Grid>
       )}
+      {pager}
     </Stack>
   )
 }
