@@ -1,4 +1,4 @@
-// Two languages, English first. The panel picks one; the worker only sends language-neutral codes.
+// Three languages, English first. The panel picks one; the worker only sends language-neutral codes.
 export type Lang = 'en' | 'de' | 'es'
 
 const en = {
@@ -245,6 +245,9 @@ const es: typeof en = {
   'range.90': 'Últimos 90 días',
   search: 'Buscar',
   searchPlaceholder: 'Filtrar por nombre',
+  pageRange: '{from}–{to} de {total}',
+  prev: 'Anterior',
+  next: 'Siguiente',
   sort: 'Ordenar por',
   'sort.usage': 'Más usadas',
   'sort.tokens': 'Coste en tokens',

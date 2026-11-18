@@ -15,7 +15,7 @@ Every installed skill, MCP server and agent adds its description to the context 
 - **Any project, any period:** latest session, 7, 30 or 90 days.
 - **Numbers from day one:** it reads your existing session files, no waiting for data to build up.
 - **Facts only:** it never changes a file and never tells you what to delete.
-- English and German.
+- English, German and Spanish.
 
 ## See it
 
@@ -82,7 +82,7 @@ orca plugin test .
 orca plugin dev watch .
 ```
 
-Code in `src/`: `worker.ts` (hook, storage, import), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory and usage), `usage.ts`, `store.ts`, `panel.tsx` (UI), `i18n.ts` (English and German), `protocol.ts`, `demo.ts` (made-up numbers for screenshots: set the storage key `demo` to `true`).
+Code in `src/`: `worker.ts` (hook, storage, import), `history.ts` (session import), `inventory.ts` (disk scan), `merge.ts` (inventory and usage), `usage.ts`, `store.ts`, `panel.tsx` (UI), `i18n.ts` (English, German and Spanish), `protocol.ts`, `demo.ts` (made-up numbers for screenshots: set the storage key `demo` to `true`).
 
 </details>
 
